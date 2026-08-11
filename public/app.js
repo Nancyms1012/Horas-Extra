@@ -346,6 +346,7 @@
             holidayToggle.style.display = 'block';
             otTypeSelector.style.display = 'block';
             overtimeResult.style.display = 'none';
+            document.getElementById('btn-reset-today').style.display = 'none';
         } else {
             // Already checked out
             statusText.textContent = '✅ Día completado';
@@ -365,6 +366,9 @@
             } else {
                 overtimeResult.style.display = 'none';
             }
+
+            // Show reset button
+            document.getElementById('btn-reset-today').style.display = 'block';
         }
 
         renderPeriodSummary();
@@ -684,6 +688,17 @@
 
         // Filter
         document.getElementById('filter-period').addEventListener('change', () => { renderHistory(); });
+
+        // Reset today's entry
+        document.getElementById('btn-reset-today').addEventListener('click', async () => {
+            if (confirm('¿Borrar el registro de hoy?')) {
+                await deleteEntry(getToday());
+                state.todayEntry = null;
+                state.entries = state.entries.filter(e => e.date !== getToday());
+                renderAll();
+                showToast('Registro de hoy borrado');
+            }
+        });
 
         // Modal events
         document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
