@@ -944,3 +944,47 @@ body {
     color: #065f46;
     margin-bottom: 4px;
 }
+
+
+/* ============ Password Field & Remember Me ============ */
+.password-field {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-field .input {
+    padding-right: 44px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 4px;
+    font-size: 1.1rem;
+    padding: 6px;
+    color: var(--text-light);
+}
+
+.password-toggle:hover {
+    color: var(--text);
+}
+
+.remember-me {
+    margin-top: 12px;
+    margin-bottom: 4px;
+}
+
+.remember-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.remember-label input {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}

@@ -29,7 +29,16 @@
                     </div>
                     <div class="form-group">
                         <label for="auth-password">Contraseña:</label>
-                        <input type="password" id="auth-password" class="input" placeholder="Mínimo 6 caracteres">
+                        <div class="password-field">
+                            <input type="password" id="auth-password" class="input" placeholder="Mínimo 6 caracteres">
+                            <button type="button" id="btn-toggle-password" class="btn-icon password-toggle" title="Ver contraseña">👁️</button>
+                        </div>
+                    </div>
+                    <div class="remember-me">
+                        <label class="remember-label">
+                            <input type="checkbox" id="remember-me" checked>
+                            <span>Recordar usuario y contraseña</span>
+                        </label>
                     </div>
                     <div class="auth-buttons">
                         <button id="btn-login" class="btn btn-primary btn-large">Iniciar Sesión</button>

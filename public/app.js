@@ -147,6 +147,26 @@
 
 
     // ---- Authentication ----
+    function loadSavedCredentials() {
+        const saved = localStorage.getItem('ot_remember_credentials');
+        if (saved) {
+            try {
+                const { email, password } = JSON.parse(saved);
+                document.getElementById('auth-email').value = email || '';
+                document.getElementById('auth-password').value = password || '';
+                document.getElementById('remember-me').checked = true;
+            } catch(e) {}
+        }
+    }
+
+    function saveCredentials(email, password) {
+        if (document.getElementById('remember-me').checked) {
+            localStorage.setItem('ot_remember_credentials', JSON.stringify({ email, password }));
+        } else {
+            localStorage.removeItem('ot_remember_credentials');
+        }
+    }
+
     async function handleLogin() {
         const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
@@ -156,6 +176,7 @@
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         showLoading(false);
         if (error) { showAuthError('Credenciales incorrectas. ¿Necesitas crear una cuenta?'); }
+        else { saveCredentials(email, password); }
     }
 
     async function handleRegister() {
@@ -168,8 +189,11 @@
         const { data, error } = await supabase.auth.signUp({ email, password });
         showLoading(false);
         if (error) { showAuthError(error.message); }
-        else if (data.user && !data.session) {
-            showAuthSuccess('Cuenta creada. Revisa tu correo para confirmar. Si no llega, intenta iniciar sesión directamente.');
+        else {
+            saveCredentials(email, password);
+            if (data.user && !data.session) {
+                showAuthSuccess('Cuenta creada. Revisa tu correo para confirmar. Si no llega, intenta iniciar sesión directamente.');
+            }
         }
     }
 
@@ -537,6 +561,21 @@
         document.getElementById('btn-register').addEventListener('click', handleRegister);
         document.getElementById('btn-logout').addEventListener('click', handleLogout);
         document.getElementById('btn-logout-settings').addEventListener('click', handleLogout);
+
+        // Toggle password visibility
+        document.getElementById('btn-toggle-password').addEventListener('click', () => {
+            const pwField = document.getElementById('auth-password');
+            const btn = document.getElementById('btn-toggle-password');
+            if (pwField.type === 'password') {
+                pwField.type = 'text';
+                btn.textContent = '🙈';
+                btn.title = 'Ocultar contraseña';
+            } else {
+                pwField.type = 'password';
+                btn.textContent = '👁️';
+                btn.title = 'Ver contraseña';
+            }
+        });
         document.getElementById('auth-password').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
         document.getElementById('auth-email').addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('auth-password').focus(); });
 
@@ -682,6 +721,7 @@
     function init() {
         showLoading(true);
         initEventListeners();
+        loadSavedCredentials();
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session && session.user) {
                 state.user = session.user;
