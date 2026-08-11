@@ -75,17 +75,13 @@
                     <div class="card today-card">
                         <h2>Hoy: <span id="today-date"></span></h2>
                         <div class="today-status" id="today-status">
-                            <p class="status-text" id="status-text">No has registrado entrada hoy</p>
+                            <p class="status-text" id="status-text">Horario: <span id="schedule-display"></span></p>
                         </div>
                         
-                        <div class="check-info" id="check-info" style="display:none;">
+                        <div class="check-info" id="check-info">
                             <div class="info-row">
-                                <span>Hora de entrada:</span>
-                                <strong id="display-check-in">--:--</strong>
-                            </div>
-                            <div class="info-row">
-                                <span>Hora de salida programada:</span>
-                                <strong id="display-scheduled-out">--:--</strong>
+                                <span>Horario laboral:</span>
+                                <strong id="display-schedule">--:-- a --:--</strong>
                             </div>
                             <div class="info-row" id="checkout-row" style="display:none;">
                                 <span>Hora de salida real:</span>
@@ -105,21 +101,28 @@
                                     <span class="result-value result-money" id="result-money">$0.00</span>
                                 </div>
                             </div>
+                            <div id="result-breakdown" class="result-breakdown"></div>
                         </div>
 
                         <div class="action-buttons">
-                            <button id="btn-check-in" class="btn btn-primary btn-large">
-                                ▶️ Registrar Entrada
-                            </button>
-                            <button id="btn-check-out" class="btn btn-danger btn-large" style="display:none;">
-                                ⏹️ Registrar Salida (Check Out)
-                            </button>
-                            <div class="holiday-toggle" id="holiday-toggle" style="display:none;">
+                            <div class="holiday-toggle" id="holiday-toggle">
                                 <label class="toggle-label">
                                     <input type="checkbox" id="is-holiday">
-                                    <span class="toggle-text">🎉 Es día feriado (hora extra doble)</span>
+                                    <span class="toggle-text">🎉 Es día feriado</span>
                                 </label>
                             </div>
+                            <div class="ot-type-selector" id="ot-type-selector">
+                                <label class="form-group">
+                                    <span>Tipo de hora extra:</span>
+                                    <select id="ot-type" class="select-input">
+                                        <option value="1.5">Tiempo y medio (×1.5)</option>
+                                        <option value="2">Doble (×2)</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <button id="btn-check-out" class="btn btn-danger btn-large">
+                                ⏹️ Registrar Salida (Check Out)
+                            </button>
                         </div>
                     </div>
 
@@ -157,7 +160,8 @@
                                     <option value="current">Período actual</option>
                                     <option value="all">Todos</option>
                                 </select>
-                                <button id="btn-cut" class="btn btn-secondary btn-small">✂️ Hacer Corte</button>
+                                <button id="btn-add-entry" class="btn btn-primary btn-small">➕ Agregar</button>
+                                <button id="btn-cut" class="btn btn-secondary btn-small">✂️ Corte</button>
                             </div>
                         </div>
                         
@@ -193,11 +197,11 @@
                             <h3>📅 Horario Laboral</h3>
                             <div class="form-group">
                                 <label for="work-start">Hora de entrada:</label>
-                                <input type="time" id="work-start" class="input" value="08:00">
+                                <input type="time" id="work-start" class="input" value="06:00">
                             </div>
                             <div class="form-group">
                                 <label for="work-end">Hora de salida:</label>
-                                <input type="time" id="work-end" class="input" value="17:00">
+                                <input type="time" id="work-end" class="input" value="15:00">
                             </div>
                         </div>
 
@@ -238,8 +242,9 @@
                                 </div>
                             </div>
                             <div class="salary-info" id="salary-info" style="display:none;">
-                                <p>💡 Valor hora extra sencilla: <strong id="rate-simple">$0.00</strong></p>
-                                <p>💡 Valor hora extra doble: <strong id="rate-double">$0.00</strong></p>
+                                <p>💡 Hora sencilla (salario/240): <strong id="rate-simple">$0.00</strong></p>
+                                <p>💡 Tiempo y medio (×1.5): <strong id="rate-150">$0.00</strong></p>
+                                <p>💡 Doble (×2): <strong id="rate-double">$0.00</strong></p>
                             </div>
                         </div>
 
@@ -263,6 +268,41 @@
                 </section>
             </main>
         </section>
+    </div>
+
+    <!-- Modal for adding/editing entries -->
+    <div id="entry-modal" class="modal" style="display:none;">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3 id="modal-title">Agregar Registro</h3>
+            <div class="form-group">
+                <label for="modal-date">Fecha:</label>
+                <input type="date" id="modal-date" class="input">
+            </div>
+            <div class="form-group">
+                <label for="modal-checkout">Hora de salida:</label>
+                <input type="time" id="modal-checkout" class="input">
+            </div>
+            <div class="form-group">
+                <label>Tipo de día:</label>
+                <select id="modal-holiday" class="select-input" style="width:100%;">
+                    <option value="normal">Día normal</option>
+                    <option value="holiday">Día feriado</option>
+                </select>
+            </div>
+            <div id="modal-ot-type-group" class="form-group">
+                <label>Tipo de hora extra:</label>
+                <select id="modal-ot-type" class="select-input" style="width:100%;">
+                    <option value="1.5">Tiempo y medio (×1.5)</option>
+                    <option value="2">Doble (×2)</option>
+                </select>
+            </div>
+            <div id="modal-preview" class="modal-preview"></div>
+            <div class="modal-buttons">
+                <button id="btn-modal-cancel" class="btn btn-secondary">Cancelar</button>
+                <button id="btn-modal-save" class="btn btn-primary">Guardar</button>
+            </div>
+        </div>
     </div>
 
     <!-- Toast notification -->

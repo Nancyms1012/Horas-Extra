@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS overtime_entries (
     check_in TEXT NOT NULL,
     check_out TEXT,
     is_holiday BOOLEAN DEFAULT FALSE,
+    ot_multiplier DECIMAL(3,1) DEFAULT 1.5,
     overtime_minutes INTEGER DEFAULT 0,
     amount DECIMAL(12,2) DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),

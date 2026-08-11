@@ -13,8 +13,8 @@
 
     // ---- State Management ----
     const DEFAULT_SETTINGS = {
-        workStart: '08:00',
-        workEnd: '17:00',
+        workStart: '06:00',
+        workEnd: '15:00',
         workDays: [1, 2, 3, 4, 5],
         salary: 0,
         currency: '$'
@@ -28,6 +28,9 @@
         cuts: [],
         currentPeriodStart: new Date().toISOString().split('T')[0]
     };
+
+    let editingDate = null; // track if we're editing an existing entry
+
 
     // ---- Utility Functions ----
     function formatDate(dateStr) {
@@ -81,144 +84,130 @@
         document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
     }
 
+
     // ---- Overtime Calculation ----
-    function calculateOvertimeRate(type) {
-        const salary = state.settings.salary || 0;
-        const baseRate = salary / 240;
-        return type === 'double' ? baseRate * 2 : baseRate * 1.5;
+    // Rates:
+    //   Sencilla = salary / 240
+    //   Tiempo y medio = (salary / 240) * 1.5
+    //   Doble = (salary / 240) * 2
+    //
+    // Holiday logic:
+    //   8 normal hours at simple rate (salary/240)
+    //   + any extra hours at double rate (salary/240 * 2)
+    
+    function getHourlyRate() {
+        return (state.settings.salary || 0) / 240;
     }
 
-    function calculateOvertime(checkIn, checkOut, workEnd) {
-        const checkOutMinutes = timeToMinutes(checkOut);
-        const workEndMinutes = timeToMinutes(workEnd);
-        const overtime = checkOutMinutes - workEndMinutes;
-        return Math.max(0, overtime);
+    function calculateOvertimeMinutes(checkOut, workEnd) {
+        const checkOutMin = timeToMinutes(checkOut);
+        const workEndMin = timeToMinutes(workEnd);
+        return Math.max(0, checkOutMin - workEndMin);
     }
 
-    function calculateAmount(overtimeMinutes, isHoliday) {
-        const hourlyRate = calculateOvertimeRate(isHoliday ? 'double' : 'simple');
-        return (overtimeMinutes / 60) * hourlyRate;
+    function calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier) {
+        const baseRate = getHourlyRate();
+        
+        if (isHoliday) {
+            // Holiday: 8 normal hours at simple rate + extras at double
+            const normalHoursAmount = 8 * baseRate; // 8hrs at sencilla
+            const extraHoursAmount = (overtimeMinutes / 60) * (baseRate * 2); // extras at double
+            return normalHoursAmount + extraHoursAmount;
+        } else {
+            // Normal day: overtime at the selected multiplier (1.5 or 2)
+            return (overtimeMinutes / 60) * (baseRate * otMultiplier);
+        }
     }
+
+    function getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier) {
+        const baseRate = getHourlyRate();
+        
+        if (isHoliday) {
+            const normalAmount = 8 * baseRate;
+            const extraAmount = (overtimeMinutes / 60) * (baseRate * 2);
+            return {
+                lines: [
+                    `8h normales × ${formatMoney(baseRate)}/h (sencilla) = ${formatMoney(normalAmount)}`,
+                    overtimeMinutes > 0 ? `${formatHours(overtimeMinutes)} extra × ${formatMoney(baseRate * 2)}/h (doble) = ${formatMoney(extraAmount)}` : null
+                ].filter(Boolean),
+                total: normalAmount + extraAmount
+            };
+        } else {
+            const rate = baseRate * otMultiplier;
+            const amount = (overtimeMinutes / 60) * rate;
+            const label = otMultiplier === 2 ? 'doble' : 'tiempo y medio';
+            return {
+                lines: [
+                    `${formatHours(overtimeMinutes)} × ${formatMoney(rate)}/h (${label}) = ${formatMoney(amount)}`
+                ],
+                total: amount
+            };
+        }
+    }
+
 
     // ---- Authentication ----
     async function handleLogin() {
         const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
-        
-        if (!email || !password) {
-            showAuthError('Ingresa correo y contraseña');
-            return;
-        }
-
+        if (!email || !password) { showAuthError('Ingresa correo y contraseña'); return; }
         showLoading(true);
         hideAuthMessages();
-
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        
         showLoading(false);
-        
-        if (error) {
-            showAuthError('Credenciales incorrectas. ¿Necesitas crear una cuenta?');
-        }
-        // onAuthStateChange handles the rest
+        if (error) { showAuthError('Credenciales incorrectas. ¿Necesitas crear una cuenta?'); }
     }
 
     async function handleRegister() {
         const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
-        
-        if (!email || !password) {
-            showAuthError('Ingresa correo y contraseña');
-            return;
-        }
-
-        if (password.length < 6) {
-            showAuthError('La contraseña debe tener al menos 6 caracteres');
-            return;
-        }
-
+        if (!email || !password) { showAuthError('Ingresa correo y contraseña'); return; }
+        if (password.length < 6) { showAuthError('La contraseña debe tener al menos 6 caracteres'); return; }
         showLoading(true);
         hideAuthMessages();
-
         const { data, error } = await supabase.auth.signUp({ email, password });
-        
         showLoading(false);
-        
-        if (error) {
-            showAuthError(error.message);
-        } else {
-            // Check if email confirmation is required
-            if (data.user && !data.session) {
-                showAuthSuccess('Cuenta creada. Revisa tu correo para confirmar (puede estar en spam). Si no llega, intenta iniciar sesión directamente.');
-            }
-            // If session exists, user is auto-logged in
+        if (error) { showAuthError(error.message); }
+        else if (data.user && !data.session) {
+            showAuthSuccess('Cuenta creada. Revisa tu correo para confirmar. Si no llega, intenta iniciar sesión directamente.');
         }
     }
 
     async function handleLogout() {
         await supabase.auth.signOut();
-        state.user = null;
-        state.entries = [];
-        state.cuts = [];
-        state.todayEntry = null;
-        state.settings = { ...DEFAULT_SETTINGS };
+        state.user = null; state.entries = []; state.cuts = [];
+        state.todayEntry = null; state.settings = { ...DEFAULT_SETTINGS };
         showAuthScreen();
     }
 
-    function showAuthError(msg) {
-        const el = document.getElementById('auth-error');
-        el.textContent = msg;
-        el.style.display = 'block';
-    }
+    function showAuthError(msg) { const el = document.getElementById('auth-error'); el.textContent = msg; el.style.display = 'block'; }
+    function showAuthSuccess(msg) { const el = document.getElementById('auth-success'); el.textContent = msg; el.style.display = 'block'; }
+    function hideAuthMessages() { document.getElementById('auth-error').style.display = 'none'; document.getElementById('auth-success').style.display = 'none'; }
+    function showAuthScreen() { document.getElementById('auth-screen').style.display = 'flex'; document.getElementById('app-main').style.display = 'none'; }
+    function showAppScreen() { document.getElementById('auth-screen').style.display = 'none'; document.getElementById('app-main').style.display = 'block'; }
 
-    function showAuthSuccess(msg) {
-        const el = document.getElementById('auth-success');
-        el.textContent = msg;
-        el.style.display = 'block';
-    }
-
-    function hideAuthMessages() {
-        document.getElementById('auth-error').style.display = 'none';
-        document.getElementById('auth-success').style.display = 'none';
-    }
-
-    function showAuthScreen() {
-        document.getElementById('auth-screen').style.display = 'flex';
-        document.getElementById('app-main').style.display = 'none';
-    }
-
-    function showAppScreen() {
-        document.getElementById('auth-screen').style.display = 'none';
-        document.getElementById('app-main').style.display = 'block';
-    }
 
     // ---- Supabase Data Operations ----
     async function loadUserData() {
         if (!state.user) return;
-        
         showLoading(true);
 
-        // Load settings
         const { data: settings } = await supabase
-            .from('user_settings')
-            .select('*')
-            .eq('user_id', state.user.id)
-            .single();
+            .from('user_settings').select('*')
+            .eq('user_id', state.user.id).single();
 
         if (settings) {
             state.settings = {
-                workStart: settings.work_start || '08:00',
-                workEnd: settings.work_end || '17:00',
+                workStart: settings.work_start || '06:00',
+                workEnd: settings.work_end || '15:00',
                 workDays: settings.work_days || [1, 2, 3, 4, 5],
                 salary: parseFloat(settings.salary) || 0,
                 currency: settings.currency || '$'
             };
         }
 
-        // Load entries
         const { data: entries } = await supabase
-            .from('overtime_entries')
-            .select('*')
+            .from('overtime_entries').select('*')
             .eq('user_id', state.user.id)
             .order('date', { ascending: false });
 
@@ -227,6 +216,7 @@
             checkIn: e.check_in,
             checkOut: e.check_out,
             isHoliday: e.is_holiday,
+            otMultiplier: e.ot_multiplier || 1.5,
             overtimeMinutes: e.overtime_minutes,
             amount: parseFloat(e.amount)
         }));
@@ -236,27 +226,22 @@
         const todayEntry = state.entries.find(e => e.date === today);
         if (todayEntry) {
             state.todayEntry = todayEntry;
-            // Remove from entries array to avoid duplication in display
-            state.entries = state.entries.filter(e => e.date !== today || e.checkOut);
+            state.entries = state.entries.filter(e => e.date !== today);
+        } else {
+            state.todayEntry = null;
         }
 
-        // Load cuts
         const { data: cuts } = await supabase
-            .from('period_cuts')
-            .select('*')
+            .from('period_cuts').select('*')
             .eq('user_id', state.user.id)
             .order('cut_date', { ascending: false });
 
         state.cuts = (cuts || []).map(c => ({
-            date: c.cut_date,
-            periodStart: c.period_start,
-            periodEnd: c.period_end,
-            totalMinutes: c.total_minutes,
-            totalAmount: parseFloat(c.total_amount),
+            date: c.cut_date, periodStart: c.period_start, periodEnd: c.period_end,
+            totalMinutes: c.total_minutes, totalAmount: parseFloat(c.total_amount),
             entriesCount: c.entries_count
         }));
 
-        // Determine current period start
         if (state.cuts.length > 0) {
             state.currentPeriodStart = state.cuts[0].periodEnd || state.cuts[0].date;
         }
@@ -267,84 +252,46 @@
 
     async function saveSettings() {
         if (!state.user) return;
-
-        const { error } = await supabase
-            .from('user_settings')
-            .upsert({
-                user_id: state.user.id,
-                work_start: state.settings.workStart,
-                work_end: state.settings.workEnd,
-                work_days: state.settings.workDays,
-                salary: state.settings.salary,
-                currency: state.settings.currency,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
-
-        if (error) {
-            console.error('Error saving settings:', error);
-            showToast('Error al guardar configuración');
-        } else {
-            showToast('Configuración guardada ☁️');
-        }
+        const { error } = await supabase.from('user_settings').upsert({
+            user_id: state.user.id,
+            work_start: state.settings.workStart, work_end: state.settings.workEnd,
+            work_days: state.settings.workDays, salary: state.settings.salary,
+            currency: state.settings.currency, updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+        if (error) { console.error('Error saving settings:', error); showToast('Error al guardar'); }
+        else { showToast('Configuración guardada ☁️'); }
     }
 
     async function saveEntry(entry) {
         if (!state.user) return;
-
-        const { error } = await supabase
-            .from('overtime_entries')
-            .upsert({
-                user_id: state.user.id,
-                date: entry.date,
-                check_in: entry.checkIn,
-                check_out: entry.checkOut,
-                is_holiday: entry.isHoliday,
-                overtime_minutes: entry.overtimeMinutes,
-                amount: entry.amount,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id,date' });
-
-        if (error) {
-            console.error('Error saving entry:', error);
-            showToast('Error al guardar registro');
-        }
+        const { error } = await supabase.from('overtime_entries').upsert({
+            user_id: state.user.id, date: entry.date,
+            check_in: entry.checkIn, check_out: entry.checkOut,
+            is_holiday: entry.isHoliday, ot_multiplier: entry.otMultiplier,
+            overtime_minutes: entry.overtimeMinutes, amount: entry.amount,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id,date' });
+        if (error) { console.error('Error saving entry:', error); showToast('Error al guardar registro'); }
     }
 
     async function deleteEntry(date) {
         if (!state.user) return;
-
-        const { error } = await supabase
-            .from('overtime_entries')
-            .delete()
-            .eq('user_id', state.user.id)
-            .eq('date', date);
-
-        if (error) {
-            console.error('Error deleting entry:', error);
-            showToast('Error al eliminar registro');
-        }
+        const { error } = await supabase.from('overtime_entries').delete()
+            .eq('user_id', state.user.id).eq('date', date);
+        if (error) { console.error('Error deleting:', error); showToast('Error al eliminar'); }
     }
 
     async function saveCut(cut) {
         if (!state.user) return;
-
-        const { error } = await supabase
-            .from('period_cuts')
-            .insert({
-                user_id: state.user.id,
-                cut_date: cut.date,
-                period_start: cut.periodStart,
-                period_end: cut.periodEnd,
-                total_minutes: cut.totalMinutes,
-                total_amount: cut.totalAmount,
-                entries_count: cut.entriesCount
-            });
-
-        if (error) {
-            console.error('Error saving cut:', error);
-            showToast('Error al guardar corte');
-        }
+        const { error } = await supabase.from('period_cuts').insert({
+            user_id: state.user.id, cut_date: cut.date,
+            period_start: cut.periodStart, period_end: cut.periodEnd,
+            total_minutes: cut.totalMinutes, total_amount: cut.totalAmount,
+            entries_count: cut.entriesCount
+        });
+        if (error) { console.error('Error saving cut:', error); showToast('Error al guardar corte'); }
     }
+
 
     // ---- Rendering ----
     function renderAll() {
@@ -356,49 +303,41 @@
     function renderHome() {
         const today = getToday();
         document.getElementById('today-date').textContent = formatDate(today);
+        document.getElementById('display-schedule').textContent = 
+            `${formatTime(state.settings.workStart)} a ${formatTime(state.settings.workEnd)}`;
 
-        const todayEntry = state.todayEntry && state.todayEntry.date === today ? state.todayEntry : null;
-
+        const todayEntry = state.todayEntry;
         const statusText = document.getElementById('status-text');
-        const checkInfo = document.getElementById('check-info');
-        const btnCheckIn = document.getElementById('btn-check-in');
+        const checkoutRow = document.getElementById('checkout-row');
+        const overtimeResult = document.getElementById('overtime-result');
         const btnCheckOut = document.getElementById('btn-check-out');
         const holidayToggle = document.getElementById('holiday-toggle');
-        const overtimeResult = document.getElementById('overtime-result');
-        const checkoutRow = document.getElementById('checkout-row');
+        const otTypeSelector = document.getElementById('ot-type-selector');
 
-        if (!todayEntry) {
-            statusText.textContent = 'No has registrado entrada hoy';
-            checkInfo.style.display = 'none';
-            btnCheckIn.style.display = 'block';
-            btnCheckOut.style.display = 'none';
-            holidayToggle.style.display = 'none';
-            overtimeResult.style.display = 'none';
-        } else if (!todayEntry.checkOut) {
-            statusText.textContent = '🟢 Trabajando...';
-            checkInfo.style.display = 'block';
-            document.getElementById('display-check-in').textContent = formatTime(todayEntry.checkIn);
-            document.getElementById('display-scheduled-out').textContent = formatTime(state.settings.workEnd);
+        if (!todayEntry || !todayEntry.checkOut) {
+            // Not checked out yet today
+            statusText.textContent = '🟢 Jornada en curso';
             checkoutRow.style.display = 'none';
-            btnCheckIn.style.display = 'none';
             btnCheckOut.style.display = 'block';
             holidayToggle.style.display = 'block';
+            otTypeSelector.style.display = 'block';
             overtimeResult.style.display = 'none';
         } else {
+            // Already checked out
             statusText.textContent = '✅ Día completado';
-            checkInfo.style.display = 'block';
-            document.getElementById('display-check-in').textContent = formatTime(todayEntry.checkIn);
-            document.getElementById('display-scheduled-out').textContent = formatTime(state.settings.workEnd);
             document.getElementById('display-check-out').textContent = formatTime(todayEntry.checkOut);
             checkoutRow.style.display = 'flex';
-            btnCheckIn.style.display = 'none';
             btnCheckOut.style.display = 'none';
             holidayToggle.style.display = 'none';
+            otTypeSelector.style.display = 'none';
 
-            if (todayEntry.overtimeMinutes > 0) {
+            if (todayEntry.amount > 0) {
                 overtimeResult.style.display = 'block';
                 document.getElementById('result-overtime').textContent = formatHours(todayEntry.overtimeMinutes);
                 document.getElementById('result-money').textContent = formatMoney(todayEntry.amount);
+                // Breakdown
+                const breakdown = getEntryBreakdown(todayEntry.overtimeMinutes, todayEntry.isHoliday, todayEntry.otMultiplier || 1.5);
+                document.getElementById('result-breakdown').innerHTML = breakdown.lines.map(l => `<p class="breakdown-line">${l}</p>`).join('');
             } else {
                 overtimeResult.style.display = 'none';
             }
@@ -409,58 +348,52 @@
 
     function renderPeriodSummary() {
         const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
-        let totalMinutes = 0;
-        let totalAmount = 0;
+        let totalMinutes = 0, totalAmount = 0;
         periodEntries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
             totalAmount += parseFloat(e.amount) || 0;
         });
-
         if (state.todayEntry && state.todayEntry.checkOut && state.todayEntry.date >= state.currentPeriodStart) {
             totalMinutes += state.todayEntry.overtimeMinutes || 0;
             totalAmount += parseFloat(state.todayEntry.amount) || 0;
         }
-
         document.getElementById('period-hours').textContent = formatHours(totalMinutes);
         document.getElementById('period-amount').textContent = formatMoney(totalAmount);
     }
 
+
     function renderHistory() {
         const filter = document.getElementById('filter-period').value;
         let entries = [...state.entries];
-        
-        if (filter === 'current') {
-            entries = entries.filter(e => e.date >= state.currentPeriodStart);
-        }
-
+        if (filter === 'current') { entries = entries.filter(e => e.date >= state.currentPeriodStart); }
         entries.sort((a, b) => b.date.localeCompare(a.date));
 
         const historyList = document.getElementById('history-list');
-        
         if (entries.length === 0) {
             historyList.innerHTML = '<p class="empty-state">No hay registros aún</p>';
         } else {
-            historyList.innerHTML = entries.map(entry => `
+            historyList.innerHTML = entries.map(entry => {
+                const typeLabel = entry.isHoliday ? '🎉 Feriado' : (entry.otMultiplier === 2 ? '×2' : '×1.5');
+                return `
                 <div class="history-entry ${entry.isHoliday ? 'holiday' : ''}">
                     <div>
-                        <div class="entry-date">${formatDate(entry.date)} ${entry.isHoliday ? '🎉' : ''}</div>
-                        <div class="entry-details">${formatTime(entry.checkIn)} - ${formatTime(entry.checkOut)}</div>
+                        <div class="entry-date">${formatDate(entry.date)} <span class="entry-type-badge">${typeLabel}</span></div>
+                        <div class="entry-details">Salida: ${formatTime(entry.checkOut)}</div>
                     </div>
                     <div style="text-align: right;">
                         <div class="entry-hours">${formatHours(entry.overtimeMinutes)}</div>
                         <div class="entry-amount">${formatMoney(entry.amount)}</div>
                     </div>
-                    <button class="entry-delete" data-date="${entry.date}" title="Eliminar">🗑️</button>
-                </div>
-            `).join('');
+                    <div class="entry-actions">
+                        <button class="entry-edit" data-date="${entry.date}" title="Editar">✏️</button>
+                        <button class="entry-delete" data-date="${entry.date}" title="Eliminar">🗑️</button>
+                    </div>
+                </div>`;
+            }).join('');
         }
 
-        let totalMinutes = 0;
-        let totalAmount = 0;
-        entries.forEach(e => {
-            totalMinutes += e.overtimeMinutes || 0;
-            totalAmount += parseFloat(e.amount) || 0;
-        });
+        let totalMinutes = 0, totalAmount = 0;
+        entries.forEach(e => { totalMinutes += e.overtimeMinutes || 0; totalAmount += parseFloat(e.amount) || 0; });
         document.getElementById('total-hours').textContent = formatHours(totalMinutes);
         document.getElementById('total-amount').textContent = formatMoney(totalAmount);
 
@@ -472,13 +405,10 @@
                 <div class="cut-item">
                     <h4>Corte: ${formatDate(cut.date)}</h4>
                     <p>Período: ${formatDate(cut.periodStart)} - ${formatDate(cut.periodEnd)}</p>
-                    <p>Total horas: <strong>${formatHours(cut.totalMinutes)}</strong> | Total monto: <strong>${formatMoney(cut.totalAmount)}</strong></p>
+                    <p>Total horas: <strong>${formatHours(cut.totalMinutes)}</strong> | Total: <strong>${formatMoney(cut.totalAmount)}</strong></p>
                     <p>Registros: ${cut.entriesCount}</p>
-                </div>
-            `).join('');
-        } else {
-            cutsSection.style.display = 'none';
-        }
+                </div>`).join('');
+        } else { cutsSection.style.display = 'none'; }
     }
 
     function renderSettings() {
@@ -488,27 +418,117 @@
         document.getElementById('currency').value = state.settings.currency || '$';
 
         const dayCheckboxes = document.querySelectorAll('.days-grid input[type="checkbox"]');
-        dayCheckboxes.forEach(cb => {
-            cb.checked = state.settings.workDays.includes(parseInt(cb.value));
-        });
+        dayCheckboxes.forEach(cb => { cb.checked = state.settings.workDays.includes(parseInt(cb.value)); });
 
         const salaryInfo = document.getElementById('salary-info');
         if (state.settings.salary > 0) {
             salaryInfo.style.display = 'block';
-            const simpleRate = calculateOvertimeRate('simple');
-            const doubleRate = calculateOvertimeRate('double');
-            document.getElementById('rate-simple').textContent = formatMoney(simpleRate);
-            document.getElementById('rate-double').textContent = formatMoney(doubleRate);
-        } else {
-            salaryInfo.style.display = 'none';
-        }
+            const base = getHourlyRate();
+            document.getElementById('rate-simple').textContent = formatMoney(base);
+            document.getElementById('rate-150').textContent = formatMoney(base * 1.5);
+            document.getElementById('rate-double').textContent = formatMoney(base * 2);
+        } else { salaryInfo.style.display = 'none'; }
 
-        // Update user email displays
         if (state.user) {
             document.getElementById('user-email').textContent = state.user.email;
             document.getElementById('settings-email').textContent = state.user.email;
         }
     }
+
+
+    // ---- Modal for Add/Edit ----
+    function openModal(entry) {
+        const modal = document.getElementById('entry-modal');
+        modal.style.display = 'flex';
+        
+        if (entry) {
+            // Editing existing
+            editingDate = entry.date;
+            document.getElementById('modal-title').textContent = 'Editar Registro';
+            document.getElementById('modal-date').value = entry.date;
+            document.getElementById('modal-checkout').value = entry.checkOut || '';
+            document.getElementById('modal-holiday').value = entry.isHoliday ? 'holiday' : 'normal';
+            document.getElementById('modal-ot-type').value = String(entry.otMultiplier || 1.5);
+        } else {
+            // Adding new
+            editingDate = null;
+            document.getElementById('modal-title').textContent = 'Agregar Registro';
+            document.getElementById('modal-date').value = getToday();
+            document.getElementById('modal-checkout').value = '';
+            document.getElementById('modal-holiday').value = 'normal';
+            document.getElementById('modal-ot-type').value = '1.5';
+        }
+        updateModalPreview();
+    }
+
+    function closeModal() {
+        document.getElementById('entry-modal').style.display = 'none';
+        editingDate = null;
+    }
+
+    function updateModalPreview() {
+        const checkout = document.getElementById('modal-checkout').value;
+        const isHoliday = document.getElementById('modal-holiday').value === 'holiday';
+        const otMultiplier = parseFloat(document.getElementById('modal-ot-type').value);
+        const preview = document.getElementById('modal-preview');
+        const otTypeGroup = document.getElementById('modal-ot-type-group');
+
+        // Hide OT type selector when holiday (holidays always use double for extras)
+        otTypeGroup.style.display = isHoliday ? 'none' : 'block';
+
+        if (!checkout || state.settings.salary <= 0) {
+            preview.innerHTML = '<p class="help-text">Ingresa hora de salida para ver el cálculo</p>';
+            return;
+        }
+
+        const overtimeMinutes = calculateOvertimeMinutes(checkout, state.settings.workEnd);
+        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
+        const breakdown = getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier);
+
+        let html = '<div class="modal-preview-content">';
+        if (isHoliday) {
+            html += `<p><strong>Feriado:</strong> 8h a tarifa sencilla + extras a doble</p>`;
+        }
+        if (overtimeMinutes > 0) {
+            html += `<p>Tiempo extra: <strong>${formatHours(overtimeMinutes)}</strong></p>`;
+        }
+        breakdown.lines.forEach(l => { html += `<p>${l}</p>`; });
+        html += `<p class="preview-total">Total: <strong>${formatMoney(amount)}</strong></p>`;
+        html += '</div>';
+        preview.innerHTML = html;
+    }
+
+    async function saveModalEntry() {
+        const date = document.getElementById('modal-date').value;
+        const checkOut = document.getElementById('modal-checkout').value;
+        const isHoliday = document.getElementById('modal-holiday').value === 'holiday';
+        const otMultiplier = parseFloat(document.getElementById('modal-ot-type').value);
+
+        if (!date || !checkOut) { showToast('Completa fecha y hora de salida'); return; }
+
+        const overtimeMinutes = calculateOvertimeMinutes(checkOut, state.settings.workEnd);
+        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
+
+        const entry = {
+            date, checkIn: state.settings.workStart, checkOut,
+            isHoliday, otMultiplier, overtimeMinutes, amount
+        };
+
+        await saveEntry(entry);
+
+        // Update local state
+        if (date === getToday()) {
+            state.todayEntry = entry;
+        } else {
+            state.entries = state.entries.filter(e => e.date !== date);
+            if (amount > 0 || isHoliday) { state.entries.push(entry); }
+        }
+
+        closeModal();
+        renderAll();
+        showToast(editingDate ? 'Registro actualizado ☁️' : 'Registro agregado ☁️');
+    }
+
 
     // ---- Event Handlers ----
     function initEventListeners() {
@@ -517,14 +537,8 @@
         document.getElementById('btn-register').addEventListener('click', handleRegister);
         document.getElementById('btn-logout').addEventListener('click', handleLogout);
         document.getElementById('btn-logout-settings').addEventListener('click', handleLogout);
-
-        // Allow Enter key on auth form
-        document.getElementById('auth-password').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleLogin();
-        });
-        document.getElementById('auth-email').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') document.getElementById('auth-password').focus();
-        });
+        document.getElementById('auth-password').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+        document.getElementById('auth-email').addEventListener('keypress', (e) => { if (e.key === 'Enter') document.getElementById('auth-password').focus(); });
 
         // Navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -537,50 +551,31 @@
             });
         });
 
-        // Check In
-        document.getElementById('btn-check-in').addEventListener('click', async () => {
-            const today = getToday();
-            state.todayEntry = {
-                date: today,
-                checkIn: getCurrentTime(),
-                checkOut: null,
-                isHoliday: false,
-                overtimeMinutes: 0,
-                amount: 0
-            };
-            await saveEntry(state.todayEntry);
-            renderHome();
-            showToast('Entrada registrada: ' + formatTime(state.todayEntry.checkIn));
-        });
-
-        // Check Out
+        // Check Out (today) - uses current time
         document.getElementById('btn-check-out').addEventListener('click', async () => {
-            if (!state.todayEntry) return;
-
             const checkOutTime = getCurrentTime();
             const isHoliday = document.getElementById('is-holiday').checked;
-            const overtimeMinutes = calculateOvertime(state.todayEntry.checkIn, checkOutTime, state.settings.workEnd);
-            const amount = calculateAmount(overtimeMinutes, isHoliday);
+            const otMultiplier = parseFloat(document.getElementById('ot-type').value);
+            const overtimeMinutes = calculateOvertimeMinutes(checkOutTime, state.settings.workEnd);
+            const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
 
-            state.todayEntry.checkOut = checkOutTime;
-            state.todayEntry.isHoliday = isHoliday;
-            state.todayEntry.overtimeMinutes = overtimeMinutes;
-            state.todayEntry.amount = amount;
+            const entry = {
+                date: getToday(), checkIn: state.settings.workStart, checkOut: checkOutTime,
+                isHoliday, otMultiplier, overtimeMinutes, amount
+            };
 
-            await saveEntry(state.todayEntry);
+            state.todayEntry = entry;
+            await saveEntry(entry);
 
-            // Add to local entries list if overtime
-            if (overtimeMinutes > 0) {
-                state.entries = state.entries.filter(e => e.date !== state.todayEntry.date);
-                state.entries.push({ ...state.todayEntry });
-            }
+            // Also add to entries list for history
+            state.entries = state.entries.filter(e => e.date !== entry.date);
+            if (amount > 0 || isHoliday) { state.entries.push(entry); }
 
             renderAll();
-
-            if (overtimeMinutes > 0) {
-                showToast(`Check out! Horas extra: ${formatHours(overtimeMinutes)} = ${formatMoney(amount)}`);
+            if (amount > 0) {
+                showToast(`Check out! ${formatHours(overtimeMinutes)} extra = ${formatMoney(amount)}`);
             } else {
-                showToast('Check out registrado. No hubo horas extra hoy.');
+                showToast('Check out registrado. No hubo horas extra.');
             }
         });
 
@@ -590,13 +585,9 @@
             state.settings.workEnd = document.getElementById('work-end').value;
             state.settings.salary = parseFloat(document.getElementById('salary').value) || 0;
             state.settings.currency = document.getElementById('currency').value || '$';
-
             const workDays = [];
-            document.querySelectorAll('.days-grid input[type="checkbox"]:checked').forEach(cb => {
-                workDays.push(parseInt(cb.value));
-            });
+            document.querySelectorAll('.days-grid input[type="checkbox"]:checked').forEach(cb => { workDays.push(parseInt(cb.value)); });
             state.settings.workDays = workDays;
-
             await saveSettings();
             renderAll();
         });
@@ -607,57 +598,28 @@
             const salaryInfo = document.getElementById('salary-info');
             if (salary > 0) {
                 salaryInfo.style.display = 'block';
-                const baseRate = salary / 240;
+                const base = salary / 240;
                 const currency = document.getElementById('currency').value || '$';
-                document.getElementById('rate-simple').textContent = `${currency}${(baseRate * 1.5).toFixed(2)}`;
-                document.getElementById('rate-double').textContent = `${currency}${(baseRate * 2).toFixed(2)}`;
-            } else {
-                salaryInfo.style.display = 'none';
-            }
+                document.getElementById('rate-simple').textContent = `${currency}${base.toFixed(2)}`;
+                document.getElementById('rate-150').textContent = `${currency}${(base * 1.5).toFixed(2)}`;
+                document.getElementById('rate-double').textContent = `${currency}${(base * 2).toFixed(2)}`;
+            } else { salaryInfo.style.display = 'none'; }
         });
 
-        // Make Cut
-        document.getElementById('btn-cut').addEventListener('click', async () => {
-            const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
-            
-            if (periodEntries.length === 0) {
-                showToast('No hay registros en el período actual para cortar');
-                return;
-            }
+        // Add entry button
+        document.getElementById('btn-add-entry').addEventListener('click', () => { openModal(null); });
 
-            let totalMinutes = 0;
-            let totalAmount = 0;
-            periodEntries.forEach(e => {
-                totalMinutes += e.overtimeMinutes || 0;
-                totalAmount += parseFloat(e.amount) || 0;
-            });
-
-            const cut = {
-                date: getToday(),
-                periodStart: state.currentPeriodStart,
-                periodEnd: getToday(),
-                totalMinutes,
-                totalAmount,
-                entriesCount: periodEntries.length
-            };
-
-            await saveCut(cut);
-            state.cuts.unshift(cut);
-            state.currentPeriodStart = getToday();
-            renderAll();
-            showToast(`Corte realizado: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
-        });
-
-        // Filter period
-        document.getElementById('filter-period').addEventListener('change', () => {
-            renderHistory();
-        });
-
-        // Delete entry
+        // Edit/Delete entry from history
         document.getElementById('history-list').addEventListener('click', async (e) => {
-            const btn = e.target.closest('.entry-delete');
-            if (btn) {
-                const date = btn.dataset.date;
+            const editBtn = e.target.closest('.entry-edit');
+            const deleteBtn = e.target.closest('.entry-delete');
+            if (editBtn) {
+                const date = editBtn.dataset.date;
+                const entry = state.entries.find(en => en.date === date);
+                if (entry) openModal(entry);
+            }
+            if (deleteBtn) {
+                const date = deleteBtn.dataset.date;
                 if (confirm('¿Eliminar este registro?')) {
                     await deleteEntry(date);
                     state.entries = state.entries.filter(en => en.date !== date);
@@ -666,7 +628,33 @@
                 }
             }
         });
+
+        // Make Cut
+        document.getElementById('btn-cut').addEventListener('click', async () => {
+            const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
+            if (periodEntries.length === 0) { showToast('No hay registros en el período actual'); return; }
+            let totalMinutes = 0, totalAmount = 0;
+            periodEntries.forEach(e => { totalMinutes += e.overtimeMinutes || 0; totalAmount += parseFloat(e.amount) || 0; });
+            const cut = { date: getToday(), periodStart: state.currentPeriodStart, periodEnd: getToday(), totalMinutes, totalAmount, entriesCount: periodEntries.length };
+            await saveCut(cut);
+            state.cuts.unshift(cut);
+            state.currentPeriodStart = getToday();
+            renderAll();
+            showToast(`Corte: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
+        });
+
+        // Filter
+        document.getElementById('filter-period').addEventListener('change', () => { renderHistory(); });
+
+        // Modal events
+        document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
+        document.getElementById('btn-modal-save').addEventListener('click', saveModalEntry);
+        document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+        document.getElementById('modal-checkout').addEventListener('input', updateModalPreview);
+        document.getElementById('modal-holiday').addEventListener('change', updateModalPreview);
+        document.getElementById('modal-ot-type').addEventListener('change', updateModalPreview);
     }
+
 
     // ---- PWA Service Worker ----
     if ('serviceWorker' in navigator) {
@@ -694,8 +682,6 @@
     function init() {
         showLoading(true);
         initEventListeners();
-
-        // Check existing session
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session && session.user) {
                 state.user = session.user;
