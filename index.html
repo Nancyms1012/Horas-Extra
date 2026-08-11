@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Horas Extra</title>
+    <meta name="description" content="Registra y calcula tus horas extra trabajadas">
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <h1>⏱️ Control de Horas Extra</h1>
+            <button id="btn-sync" class="btn-icon" title="Sincronizar datos">
+                🔄
+            </button>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-tab="home">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Inicio</span>
+            </button>
+            <button class="nav-btn" data-tab="history">
+                <span class="nav-icon">📋</span>
+                <span class="nav-label">Historial</span>
+            </button>
+            <button class="nav-btn" data-tab="settings">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-label">Ajustes</span>
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Home Tab -->
+            <section id="tab-home" class="tab-content active">
+                <div class="card today-card">
+                    <h2>Hoy: <span id="today-date"></span></h2>
+                    <div class="today-status" id="today-status">
+                        <p class="status-text" id="status-text">No has registrado entrada hoy</p>
+                    </div>
+                    
+                    <div class="check-info" id="check-info" style="display:none;">
+                        <div class="info-row">
+                            <span>Hora de entrada:</span>
+                            <strong id="display-check-in">--:--</strong>
+                        </div>
+                        <div class="info-row">
+                            <span>Hora de salida programada:</span>
+                            <strong id="display-scheduled-out">--:--</strong>
+                        </div>
+                        <div class="info-row" id="checkout-row" style="display:none;">
+                            <span>Hora de salida real:</span>
+                            <strong id="display-check-out">--:--</strong>
+                        </div>
+                    </div>
+
+                    <div class="overtime-result" id="overtime-result" style="display:none;">
+                        <h3>Resumen de Horas Extra</h3>
+                        <div class="result-grid">
+                            <div class="result-item">
+                                <span class="result-label">Tiempo extra</span>
+                                <span class="result-value" id="result-overtime">0h 0m</span>
+                            </div>
+                            <div class="result-item">
+                                <span class="result-label">Monto a pagar</span>
+                                <span class="result-value result-money" id="result-money">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button id="btn-check-in" class="btn btn-primary btn-large">
+                            ▶️ Registrar Entrada
+                        </button>
+                        <button id="btn-check-out" class="btn btn-danger btn-large" style="display:none;">
+                            ⏹️ Registrar Salida (Check Out)
+                        </button>
+                        <div class="holiday-toggle" id="holiday-toggle" style="display:none;">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="is-holiday">
+                                <span class="toggle-text">🎉 Es día feriado (hora extra doble)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Summary -->
+                <div class="card summary-card">
+                    <h3>Resumen del Período Actual</h3>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <span class="summary-value" id="period-hours">0h 0m</span>
+                            <span class="summary-label">Horas extra acumuladas</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-value" id="period-amount">$0.00</span>
+                            <span class="summary-label">Monto acumulado</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- History Tab -->
+            <section id="tab-history" class="tab-content">
+                <div class="card">
+                    <div class="history-header">
+                        <h2>Historial de Horas Extra</h2>
+                        <div class="history-controls">
+                            <select id="filter-period" class="select-input">
+                                <option value="current">Período actual</option>
+                                <option value="all">Todos</option>
+                            </select>
+                            <button id="btn-cut" class="btn btn-secondary btn-small">✂️ Hacer Corte</button>
+                        </div>
+                    </div>
+                    
+                    <div class="history-totals" id="history-totals">
+                        <div class="total-item">
+                            <span>Total horas:</span>
+                            <strong id="total-hours">0h 0m</strong>
+                        </div>
+                        <div class="total-item">
+                            <span>Total monto:</span>
+                            <strong id="total-amount">$0.00</strong>
+                        </div>
+                    </div>
+
+                    <div class="history-list" id="history-list">
+                        <p class="empty-state">No hay registros aún</p>
+                    </div>
+                </div>
+
+                <!-- Past Cuts -->
+                <div class="card" id="cuts-section" style="display:none;">
+                    <h3>Cortes Anteriores</h3>
+                    <div id="cuts-list"></div>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section id="tab-settings" class="tab-content">
+                <div class="card">
+                    <h2>Configuración</h2>
+                    
+                    <div class="settings-section">
+                        <h3>📅 Horario Laboral</h3>
+                        <div class="form-group">
+                            <label for="work-start">Hora de entrada:</label>
+                            <input type="time" id="work-start" class="input" value="08:00">
+                        </div>
+                        <div class="form-group">
+                            <label for="work-end">Hora de salida:</label>
+                            <input type="time" id="work-end" class="input" value="17:00">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>📆 Días Laborales</h3>
+                        <div class="days-grid">
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="1" checked> <span>Lun</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="2" checked> <span>Mar</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="3" checked> <span>Mié</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="4" checked> <span>Jue</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="5" checked> <span>Vie</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="6"> <span>Sáb</span>
+                            </label>
+                            <label class="day-checkbox">
+                                <input type="checkbox" value="0"> <span>Dom</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>💰 Salario</h3>
+                        <div class="form-group">
+                            <label for="salary">Salario mensual:</label>
+                            <div class="input-with-prefix">
+                                <span class="input-prefix">$</span>
+                                <input type="number" id="salary" class="input" placeholder="0.00" step="0.01">
+                            </div>
+                        </div>
+                        <div class="salary-info" id="salary-info" style="display:none;">
+                            <p>💡 Valor hora extra sencilla: <strong id="rate-simple">$0.00</strong></p>
+                            <p>💡 Valor hora extra doble: <strong id="rate-double">$0.00</strong></p>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>💱 Moneda</h3>
+                        <div class="form-group">
+                            <label for="currency">Símbolo de moneda:</label>
+                            <input type="text" id="currency" class="input" value="$" maxlength="5" style="width: 80px;">
+                        </div>
+                    </div>
+
+                    <button id="btn-save-settings" class="btn btn-primary">💾 Guardar Configuración</button>
+                </div>
+
+                <div class="card">
+                    <h3>🔄 Sincronización de Datos</h3>
+                    <p class="help-text">Exporta tus datos para importarlos en otro dispositivo y mantener ambos sincronizados.</p>
+                    <div class="sync-buttons">
+                        <button id="btn-export" class="btn btn-secondary">📤 Exportar Datos</button>
+                        <button id="btn-import" class="btn btn-secondary">📥 Importar Datos</button>
+                        <input type="file" id="import-file" accept=".json" style="display:none;">
+                    </div>
+                </div>
+
+                <div class="card danger-zone">
+                    <h3>⚠️ Zona de Peligro</h3>
+                    <button id="btn-clear-data" class="btn btn-danger">🗑️ Borrar Todos los Datos</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

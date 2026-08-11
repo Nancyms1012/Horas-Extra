@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#4f46e5"/>
+  <circle cx="96" cy="80" r="45" fill="white"/>
+  <line x1="96" y1="80" x2="96" y2="50" stroke="#4f46e5" stroke-width="4" stroke-linecap="round"/>
+  <line x1="96" y1="80" x2="116" y2="70" stroke="#4f46e5" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="96" cy="80" r="4" fill="#4f46e5"/>
+  <text x="145" y="60" font-family="Arial" font-weight="bold" font-size="35" fill="#10b981">+</text>
+  <text x="96" y="165" font-family="Arial" font-weight="bold" font-size="28" fill="white" text-anchor="middle">EXTRAS</text>
+</svg>
