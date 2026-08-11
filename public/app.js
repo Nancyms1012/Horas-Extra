@@ -670,7 +670,11 @@
             const deleteBtn = e.target.closest('.entry-delete');
             if (editBtn) {
                 const date = editBtn.dataset.date;
-                const entry = state.entries.find(en => en.date === date);
+                let entry = state.entries.find(en => en.date === date);
+                // Also check todayEntry
+                if (!entry && state.todayEntry && state.todayEntry.date === date) {
+                    entry = state.todayEntry;
+                }
                 if (entry) openModal(entry);
             }
             if (deleteBtn) {
@@ -678,6 +682,9 @@
                 if (confirm('¿Eliminar este registro?')) {
                     await deleteEntry(date);
                     state.entries = state.entries.filter(en => en.date !== date);
+                    if (state.todayEntry && state.todayEntry.date === date) {
+                        state.todayEntry = null;
+                    }
                     renderAll();
                     showToast('Registro eliminado');
                 }
