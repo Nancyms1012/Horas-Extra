@@ -376,16 +376,20 @@
 
     function renderPeriodSummary() {
         const today = getToday();
-        const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart && e.date !== today);
+        let allEntries = [...state.entries];
+        // Include today's entry if checked out and not already in entries
+        if (state.todayEntry && state.todayEntry.checkOut) {
+            const alreadyIncluded = allEntries.some(e => e.date === state.todayEntry.date);
+            if (!alreadyIncluded) {
+                allEntries.push({ ...state.todayEntry });
+            }
+        }
+        const periodEntries = allEntries.filter(e => e.date >= state.currentPeriodStart);
         let totalMinutes = 0, totalAmount = 0;
         periodEntries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
             totalAmount += parseFloat(e.amount) || 0;
         });
-        if (state.todayEntry && state.todayEntry.checkOut && state.todayEntry.date >= state.currentPeriodStart) {
-            totalMinutes += state.todayEntry.overtimeMinutes || 0;
-            totalAmount += parseFloat(state.todayEntry.amount) || 0;
-        }
         document.getElementById('period-hours').textContent = formatHours(totalMinutes);
         document.getElementById('period-amount').textContent = formatMoney(totalAmount);
     }
@@ -394,6 +398,13 @@
     function renderHistory() {
         const filter = document.getElementById('filter-period').value;
         let entries = [...state.entries];
+        // Include today's entry in history if it has a checkout
+        if (state.todayEntry && state.todayEntry.checkOut) {
+            const alreadyIncluded = entries.some(e => e.date === state.todayEntry.date);
+            if (!alreadyIncluded) {
+                entries.push({ ...state.todayEntry });
+            }
+        }
         if (filter === 'current') { entries = entries.filter(e => e.date >= state.currentPeriodStart); }
         entries.sort((a, b) => b.date.localeCompare(a.date));
 
