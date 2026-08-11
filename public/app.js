@@ -105,29 +105,40 @@
         return Math.max(0, checkOutMin - workEndMin);
     }
 
-    function calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier) {
+    function calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOut) {
         const baseRate = getHourlyRate();
         
         if (isHoliday) {
-            // Holiday: 8 normal hours at simple rate + extras at double
-            const normalHoursAmount = 8 * baseRate; // 8hrs at sencilla
-            const extraHoursAmount = (overtimeMinutes / 60) * (baseRate * 2); // extras at double
-            return normalHoursAmount + extraHoursAmount;
+            // Holiday: ALL hours worked (from entry to checkout) at simple rate
+            // + overtime hours at double rate
+            const workStartMin = timeToMinutes(state.settings.workStart);
+            const checkOutMin = timeToMinutes(checkOut || state.settings.workEnd);
+            const totalWorkedMinutes = Math.max(0, checkOutMin - workStartMin);
+            const totalWorkedHours = totalWorkedMinutes / 60;
+            
+            const normalAmount = totalWorkedHours * baseRate; // all hours at sencilla
+            const extraAmount = (overtimeMinutes / 60) * (baseRate * 2); // extras at doble
+            return normalAmount + extraAmount;
         } else {
             // Normal day: overtime at the selected multiplier (1.5 or 2)
             return (overtimeMinutes / 60) * (baseRate * otMultiplier);
         }
     }
 
-    function getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier) {
+    function getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier, checkOut) {
         const baseRate = getHourlyRate();
         
         if (isHoliday) {
-            const normalAmount = 8 * baseRate;
+            const workStartMin = timeToMinutes(state.settings.workStart);
+            const checkOutMin = timeToMinutes(checkOut || state.settings.workEnd);
+            const totalWorkedMinutes = Math.max(0, checkOutMin - workStartMin);
+            const totalWorkedHours = totalWorkedMinutes / 60;
+            
+            const normalAmount = totalWorkedHours * baseRate;
             const extraAmount = (overtimeMinutes / 60) * (baseRate * 2);
             return {
                 lines: [
-                    `8h normales × ${formatMoney(baseRate)}/h (sencilla) = ${formatMoney(normalAmount)}`,
+                    `${formatHours(totalWorkedMinutes)} trabajadas × ${formatMoney(baseRate)}/h (sencilla) = ${formatMoney(normalAmount)}`,
                     overtimeMinutes > 0 ? `${formatHours(overtimeMinutes)} extra × ${formatMoney(baseRate * 2)}/h (doble) = ${formatMoney(extraAmount)}` : null
                 ].filter(Boolean),
                 total: normalAmount + extraAmount
@@ -361,7 +372,7 @@
                 document.getElementById('result-overtime').textContent = formatHours(todayEntry.overtimeMinutes);
                 document.getElementById('result-money').textContent = formatMoney(todayEntry.amount);
                 // Breakdown
-                const breakdown = getEntryBreakdown(todayEntry.overtimeMinutes, todayEntry.isHoliday, todayEntry.otMultiplier || 1.5);
+                const breakdown = getEntryBreakdown(todayEntry.overtimeMinutes, todayEntry.isHoliday, todayEntry.otMultiplier || 1.5, todayEntry.checkOut);
                 document.getElementById('result-breakdown').innerHTML = breakdown.lines.map(l => `<p class="breakdown-line">${l}</p>`).join('');
             } else {
                 overtimeResult.style.display = 'none';
@@ -522,12 +533,12 @@
         }
 
         const overtimeMinutes = calculateOvertimeMinutes(checkout, state.settings.workEnd);
-        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
-        const breakdown = getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier);
+        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkout);
+        const breakdown = getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier, checkout);
 
         let html = '<div class="modal-preview-content">';
         if (isHoliday) {
-            html += `<p><strong>Feriado:</strong> 8h a tarifa sencilla + extras a doble</p>`;
+            html += `<p><strong>Feriado:</strong> Horas trabajadas a sencilla + extras a doble</p>`;
         }
         if (overtimeMinutes > 0) {
             html += `<p>Tiempo extra: <strong>${formatHours(overtimeMinutes)}</strong></p>`;
@@ -547,7 +558,7 @@
         if (!date || !checkOut) { showToast('Completa fecha y hora de salida'); return; }
 
         const overtimeMinutes = calculateOvertimeMinutes(checkOut, state.settings.workEnd);
-        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
+        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOut);
 
         const entry = {
             date, checkIn: state.settings.workStart, checkOut,
@@ -612,7 +623,7 @@
             const isHoliday = document.getElementById('is-holiday').checked;
             const otMultiplier = parseFloat(document.getElementById('ot-type').value);
             const overtimeMinutes = calculateOvertimeMinutes(checkOutTime, state.settings.workEnd);
-            const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier);
+            const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOutTime);
 
             const entry = {
                 date: getToday(), checkIn: state.settings.workStart, checkOut: checkOutTime,
