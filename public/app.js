@@ -385,17 +385,83 @@
         renderPeriodSummary();
     }
 
+    // ---- Period Helpers ----
+    function getCurrentPayPeriod() {
+        // 1-15 del mes se paga el 30 del mismo mes
+        // 16-31 del mes se paga el 15 del mes siguiente
+        const today = new Date();
+        const day = today.getDate();
+        const year = today.getFullYear();
+        const month = today.getMonth(); // 0-based
+
+        if (day <= 15) {
+            // First half: 1-15 of current month
+            const start = new Date(year, month, 1);
+            const end = new Date(year, month, 15);
+            const payDate = new Date(year, month, 30); // paid on 30th
+            return { start: formatISODate(start), end: formatISODate(end), payDate: formatISODate(payDate), label: `1-15 ${getMonthName(month)}` };
+        } else {
+            // Second half: 16-end of current month
+            const start = new Date(year, month, 16);
+            const end = new Date(year, month + 1, 0); // last day of month
+            const payDate = new Date(year, month + 1, 15); // paid on 15th next month
+            return { start: formatISODate(start), end: formatISODate(end), payDate: formatISODate(payDate), label: `16-${end.getDate()} ${getMonthName(month)}` };
+        }
+    }
+
+    function getPayPeriodForDate(dateStr) {
+        const date = new Date(dateStr + 'T12:00:00');
+        const day = date.getDate();
+        const year = date.getFullYear();
+        const month = date.getMonth();
+
+        if (day <= 15) {
+            const start = new Date(year, month, 1);
+            const end = new Date(year, month, 15);
+            const payDate = new Date(year, month, 30);
+            return { start: formatISODate(start), end: formatISODate(end), payDate: formatISODate(payDate), label: `1-15 ${getMonthName(month)} ${year}` };
+        } else {
+            const start = new Date(year, month, 16);
+            const end = new Date(year, month + 1, 0);
+            const payDate = new Date(year, month + 1, 15);
+            return { start: formatISODate(start), end: formatISODate(end), payDate: formatISODate(payDate), label: `16-${end.getDate()} ${getMonthName(month)} ${year}` };
+        }
+    }
+
+    function getWeekRange(dateStr) {
+        const date = new Date(dateStr + 'T12:00:00');
+        const dayOfWeek = date.getDay(); // 0=Sun
+        const monday = new Date(date);
+        monday.setDate(date.getDate() - ((dayOfWeek + 6) % 7)); // go back to Monday
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        return { start: formatISODate(monday), end: formatISODate(sunday) };
+    }
+
+    function getMonthRange(dateStr) {
+        const date = new Date(dateStr + 'T12:00:00');
+        const start = new Date(date.getFullYear(), date.getMonth(), 1);
+        const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+        return { start: formatISODate(start), end: formatISODate(end), label: `${getMonthName(date.getMonth())} ${date.getFullYear()}` };
+    }
+
+    function formatISODate(date) {
+        return date.toISOString().split('T')[0];
+    }
+
+    function getMonthName(monthIndex) {
+        const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+        return months[monthIndex];
+    }
+
     function renderPeriodSummary() {
-        const today = getToday();
+        const period = getCurrentPayPeriod();
         let allEntries = [...state.entries];
-        // Include today's entry if checked out and not already in entries
         if (state.todayEntry && state.todayEntry.checkOut) {
             const alreadyIncluded = allEntries.some(e => e.date === state.todayEntry.date);
-            if (!alreadyIncluded) {
-                allEntries.push({ ...state.todayEntry });
-            }
+            if (!alreadyIncluded) { allEntries.push({ ...state.todayEntry }); }
         }
-        const periodEntries = allEntries.filter(e => e.date >= state.currentPeriodStart);
+        const periodEntries = allEntries.filter(e => e.date >= period.start && e.date <= period.end);
         let totalMinutes = 0, totalAmount = 0;
         periodEntries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
@@ -403,25 +469,49 @@
         });
         document.getElementById('period-hours').textContent = formatHours(totalMinutes);
         document.getElementById('period-amount').textContent = formatMoney(totalAmount);
+        document.getElementById('period-label').textContent = `Quincena actual: ${period.label}`;
+        document.getElementById('period-pay-date').textContent = `Se paga: ${formatDate(period.payDate)}`;
     }
 
 
     function renderHistory() {
         const filter = document.getElementById('filter-period').value;
-        let entries = [...state.entries];
+        let allEntries = [...state.entries];
         // Include today's entry in history if it has a checkout
         if (state.todayEntry && state.todayEntry.checkOut) {
-            const alreadyIncluded = entries.some(e => e.date === state.todayEntry.date);
-            if (!alreadyIncluded) {
-                entries.push({ ...state.todayEntry });
-            }
+            const alreadyIncluded = allEntries.some(e => e.date === state.todayEntry.date);
+            if (!alreadyIncluded) { allEntries.push({ ...state.todayEntry }); }
         }
-        if (filter === 'current') { entries = entries.filter(e => e.date >= state.currentPeriodStart); }
+
+        let entries = [];
+        let filterLabel = '';
+        const today = getToday();
+
+        if (filter === 'week') {
+            const week = getWeekRange(today);
+            entries = allEntries.filter(e => e.date >= week.start && e.date <= week.end);
+            filterLabel = `Semana: ${formatDate(week.start)} - ${formatDate(week.end)}`;
+        } else if (filter === 'biweekly') {
+            const period = getCurrentPayPeriod();
+            entries = allEntries.filter(e => e.date >= period.start && e.date <= period.end);
+            filterLabel = `Quincena: ${period.label} (se paga ${formatDate(period.payDate)})`;
+        } else if (filter === 'month') {
+            const month = getMonthRange(today);
+            entries = allEntries.filter(e => e.date >= month.start && e.date <= month.end);
+            filterLabel = `Mes: ${month.label}`;
+        } else {
+            entries = [...allEntries];
+            filterLabel = 'Todos los registros';
+        }
+
         entries.sort((a, b) => b.date.localeCompare(a.date));
+
+        // Show filter label
+        document.getElementById('filter-label').textContent = filterLabel;
 
         const historyList = document.getElementById('history-list');
         if (entries.length === 0) {
-            historyList.innerHTML = '<p class="empty-state">No hay registros aún</p>';
+            historyList.innerHTML = '<p class="empty-state">No hay registros en este período</p>';
         } else {
             historyList.innerHTML = entries.map(entry => {
                 const typeLabel = entry.isHoliday ? '🎉 Feriado' : (entry.otMultiplier === 2 ? '×2' : '×1.5');
@@ -702,19 +792,8 @@
             }
         });
 
-        // Make Cut
-        document.getElementById('btn-cut').addEventListener('click', async () => {
-            const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
-            if (periodEntries.length === 0) { showToast('No hay registros en el período actual'); return; }
-            let totalMinutes = 0, totalAmount = 0;
-            periodEntries.forEach(e => { totalMinutes += e.overtimeMinutes || 0; totalAmount += parseFloat(e.amount) || 0; });
-            const cut = { date: getToday(), periodStart: state.currentPeriodStart, periodEnd: getToday(), totalMinutes, totalAmount, entriesCount: periodEntries.length };
-            await saveCut(cut);
-            state.cuts.unshift(cut);
-            state.currentPeriodStart = getToday();
-            renderAll();
-            showToast(`Corte: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
-        });
+        // Make Cut (auto-managed by pay periods now, but keep for manual use)
+        // document.getElementById('btn-cut') removed - periods are automatic
 
         // Filter
         document.getElementById('filter-period').addEventListener('change', () => { renderHistory(); });

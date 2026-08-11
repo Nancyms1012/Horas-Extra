@@ -140,7 +140,8 @@
 
                     <!-- Quick Summary -->
                     <div class="card summary-card">
-                        <h3>Resumen del Período Actual</h3>
+                        <h3 id="period-label">Quincena actual</h3>
+                        <p class="period-pay-info" id="period-pay-date"></p>
                         <div class="summary-grid">
                             <div class="summary-item">
                                 <span class="summary-value" id="period-hours">0h 0m</span>
@@ -169,13 +170,16 @@
                             <h2>Historial de Horas Extra</h2>
                             <div class="history-controls">
                                 <select id="filter-period" class="select-input">
-                                    <option value="current">Período actual</option>
+                                    <option value="biweekly">Quincena actual</option>
+                                    <option value="week">Esta semana</option>
+                                    <option value="month">Este mes</option>
                                     <option value="all">Todos</option>
                                 </select>
                                 <button id="btn-add-entry" class="btn btn-primary btn-small">➕ Agregar</button>
-                                <button id="btn-cut" class="btn btn-secondary btn-small">✂️ Corte</button>
                             </div>
                         </div>
+                        
+                        <p class="filter-label" id="filter-label"></p>
                         
                         <div class="history-totals" id="history-totals">
                             <div class="total-item">
