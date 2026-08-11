@@ -375,7 +375,8 @@
     }
 
     function renderPeriodSummary() {
-        const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
+        const today = getToday();
+        const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart && e.date !== today);
         let totalMinutes = 0, totalAmount = 0;
         periodEntries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
