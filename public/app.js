@@ -1,24 +1,31 @@
 // ============================================
-// OVERTIME TRACKER - Main Application
+// OVERTIME TRACKER - Main Application with Supabase
 // ============================================
 
 (function() {
     'use strict';
 
+    // ---- Supabase Configuration ----
+    const SUPABASE_URL = 'https://hcqykizneteracvmcddc.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhjcXlraXpuZXRlcmFjdm1jZGRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NjQ2NTIsImV4cCI6MjEwMjA0MDY1Mn0.VpP2iUjnXydVf9vNsbht2yGlypiQhkg_W_DLCPxIiD8';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     // ---- State Management ----
     const DEFAULT_SETTINGS = {
         workStart: '08:00',
         workEnd: '17:00',
-        workDays: [1, 2, 3, 4, 5], // Mon-Fri
+        workDays: [1, 2, 3, 4, 5],
         salary: 0,
         currency: '$'
     };
 
     let state = {
+        user: null,
         settings: { ...DEFAULT_SETTINGS },
-        todayEntry: null,  // { date, checkIn, checkOut, isHoliday, overtimeMinutes, amount }
-        entries: [],       // historical entries
-        cuts: [],          // past period cuts
+        todayEntry: null,
+        entries: [],
+        cuts: [],
         currentPeriodStart: new Date().toISOString().split('T')[0]
     };
 
@@ -46,7 +53,7 @@
 
     function formatMoney(amount) {
         const currency = state.settings.currency || '$';
-        return `${currency}${amount.toFixed(2)}`;
+        return `${currency}${parseFloat(amount || 0).toFixed(2)}`;
     }
 
     function getCurrentTime() {
@@ -70,10 +77,12 @@
         setTimeout(() => toast.classList.remove('show'), 3000);
     }
 
+    function showLoading(show) {
+        document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+    }
+
     // ---- Overtime Calculation ----
     function calculateOvertimeRate(type) {
-        // Simple OT: (salary / 240) * 1.5
-        // Double OT (holiday): (salary / 240) * 2
         const salary = state.settings.salary || 0;
         const baseRate = salary / 240;
         return type === 'double' ? baseRate * 2 : baseRate * 1.5;
@@ -91,70 +100,250 @@
         return (overtimeMinutes / 60) * hourlyRate;
     }
 
-    // ---- Data Persistence ----
-    function saveState() {
-        localStorage.setItem('overtime_tracker_state', JSON.stringify(state));
+    // ---- Authentication ----
+    async function handleLogin() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value;
+        
+        if (!email || !password) {
+            showAuthError('Ingresa correo y contraseña');
+            return;
+        }
+
+        showLoading(true);
+        hideAuthMessages();
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        
+        showLoading(false);
+        
+        if (error) {
+            showAuthError('Credenciales incorrectas. ¿Necesitas crear una cuenta?');
+        }
+        // onAuthStateChange handles the rest
     }
 
-    function loadState() {
-        const saved = localStorage.getItem('overtime_tracker_state');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                state = { ...state, ...parsed };
-                // Ensure settings has all keys
-                state.settings = { ...DEFAULT_SETTINGS, ...state.settings };
-            } catch (e) {
-                console.error('Error loading state:', e);
+    async function handleRegister() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value;
+        
+        if (!email || !password) {
+            showAuthError('Ingresa correo y contraseña');
+            return;
+        }
+
+        if (password.length < 6) {
+            showAuthError('La contraseña debe tener al menos 6 caracteres');
+            return;
+        }
+
+        showLoading(true);
+        hideAuthMessages();
+
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        
+        showLoading(false);
+        
+        if (error) {
+            showAuthError(error.message);
+        } else {
+            // Check if email confirmation is required
+            if (data.user && !data.session) {
+                showAuthSuccess('Cuenta creada. Revisa tu correo para confirmar (puede estar en spam). Si no llega, intenta iniciar sesión directamente.');
             }
+            // If session exists, user is auto-logged in
         }
     }
 
-    function exportData() {
-        const dataStr = JSON.stringify(state, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `horas_extra_${getToday()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast('Datos exportados correctamente');
+    async function handleLogout() {
+        await supabase.auth.signOut();
+        state.user = null;
+        state.entries = [];
+        state.cuts = [];
+        state.todayEntry = null;
+        state.settings = { ...DEFAULT_SETTINGS };
+        showAuthScreen();
     }
 
-    function importData(file) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const imported = JSON.parse(e.target.result);
-                // Merge entries (avoid duplicates by date)
-                const existingDates = new Set(state.entries.map(en => en.date));
-                const newEntries = imported.entries ? imported.entries.filter(en => !existingDates.has(en.date)) : [];
-                state.entries = [...state.entries, ...newEntries].sort((a, b) => b.date.localeCompare(a.date));
-                
-                // Merge cuts
-                if (imported.cuts) {
-                    const existingCutDates = new Set(state.cuts.map(c => c.date));
-                    const newCuts = imported.cuts.filter(c => !existingCutDates.has(c.date));
-                    state.cuts = [...state.cuts, ...newCuts].sort((a, b) => b.date.localeCompare(a.date));
-                }
+    function showAuthError(msg) {
+        const el = document.getElementById('auth-error');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
 
-                // Update settings if current are default
-                if (imported.settings && state.settings.salary === 0) {
-                    state.settings = { ...DEFAULT_SETTINGS, ...imported.settings };
-                }
+    function showAuthSuccess(msg) {
+        const el = document.getElementById('auth-success');
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
 
-                saveState();
-                renderAll();
-                showToast('Datos importados y fusionados correctamente');
-            } catch (err) {
-                showToast('Error al importar: archivo inválido');
-                console.error('Import error:', err);
-            }
-        };
-        reader.readAsText(file);
+    function hideAuthMessages() {
+        document.getElementById('auth-error').style.display = 'none';
+        document.getElementById('auth-success').style.display = 'none';
+    }
+
+    function showAuthScreen() {
+        document.getElementById('auth-screen').style.display = 'flex';
+        document.getElementById('app-main').style.display = 'none';
+    }
+
+    function showAppScreen() {
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('app-main').style.display = 'block';
+    }
+
+    // ---- Supabase Data Operations ----
+    async function loadUserData() {
+        if (!state.user) return;
+        
+        showLoading(true);
+
+        // Load settings
+        const { data: settings } = await supabase
+            .from('user_settings')
+            .select('*')
+            .eq('user_id', state.user.id)
+            .single();
+
+        if (settings) {
+            state.settings = {
+                workStart: settings.work_start || '08:00',
+                workEnd: settings.work_end || '17:00',
+                workDays: settings.work_days || [1, 2, 3, 4, 5],
+                salary: parseFloat(settings.salary) || 0,
+                currency: settings.currency || '$'
+            };
+        }
+
+        // Load entries
+        const { data: entries } = await supabase
+            .from('overtime_entries')
+            .select('*')
+            .eq('user_id', state.user.id)
+            .order('date', { ascending: false });
+
+        state.entries = (entries || []).map(e => ({
+            date: e.date,
+            checkIn: e.check_in,
+            checkOut: e.check_out,
+            isHoliday: e.is_holiday,
+            overtimeMinutes: e.overtime_minutes,
+            amount: parseFloat(e.amount)
+        }));
+
+        // Check today's entry
+        const today = getToday();
+        const todayEntry = state.entries.find(e => e.date === today);
+        if (todayEntry) {
+            state.todayEntry = todayEntry;
+            // Remove from entries array to avoid duplication in display
+            state.entries = state.entries.filter(e => e.date !== today || e.checkOut);
+        }
+
+        // Load cuts
+        const { data: cuts } = await supabase
+            .from('period_cuts')
+            .select('*')
+            .eq('user_id', state.user.id)
+            .order('cut_date', { ascending: false });
+
+        state.cuts = (cuts || []).map(c => ({
+            date: c.cut_date,
+            periodStart: c.period_start,
+            periodEnd: c.period_end,
+            totalMinutes: c.total_minutes,
+            totalAmount: parseFloat(c.total_amount),
+            entriesCount: c.entries_count
+        }));
+
+        // Determine current period start
+        if (state.cuts.length > 0) {
+            state.currentPeriodStart = state.cuts[0].periodEnd || state.cuts[0].date;
+        }
+
+        showLoading(false);
+        renderAll();
+    }
+
+    async function saveSettings() {
+        if (!state.user) return;
+
+        const { error } = await supabase
+            .from('user_settings')
+            .upsert({
+                user_id: state.user.id,
+                work_start: state.settings.workStart,
+                work_end: state.settings.workEnd,
+                work_days: state.settings.workDays,
+                salary: state.settings.salary,
+                currency: state.settings.currency,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+
+        if (error) {
+            console.error('Error saving settings:', error);
+            showToast('Error al guardar configuración');
+        } else {
+            showToast('Configuración guardada ☁️');
+        }
+    }
+
+    async function saveEntry(entry) {
+        if (!state.user) return;
+
+        const { error } = await supabase
+            .from('overtime_entries')
+            .upsert({
+                user_id: state.user.id,
+                date: entry.date,
+                check_in: entry.checkIn,
+                check_out: entry.checkOut,
+                is_holiday: entry.isHoliday,
+                overtime_minutes: entry.overtimeMinutes,
+                amount: entry.amount,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,date' });
+
+        if (error) {
+            console.error('Error saving entry:', error);
+            showToast('Error al guardar registro');
+        }
+    }
+
+    async function deleteEntry(date) {
+        if (!state.user) return;
+
+        const { error } = await supabase
+            .from('overtime_entries')
+            .delete()
+            .eq('user_id', state.user.id)
+            .eq('date', date);
+
+        if (error) {
+            console.error('Error deleting entry:', error);
+            showToast('Error al eliminar registro');
+        }
+    }
+
+    async function saveCut(cut) {
+        if (!state.user) return;
+
+        const { error } = await supabase
+            .from('period_cuts')
+            .insert({
+                user_id: state.user.id,
+                cut_date: cut.date,
+                period_start: cut.periodStart,
+                period_end: cut.periodEnd,
+                total_minutes: cut.totalMinutes,
+                total_amount: cut.totalAmount,
+                entries_count: cut.entriesCount
+            });
+
+        if (error) {
+            console.error('Error saving cut:', error);
+            showToast('Error al guardar corte');
+        }
     }
 
     // ---- Rendering ----
@@ -168,7 +357,6 @@
         const today = getToday();
         document.getElementById('today-date').textContent = formatDate(today);
 
-        // Check if there's a today entry
         const todayEntry = state.todayEntry && state.todayEntry.date === today ? state.todayEntry : null;
 
         const statusText = document.getElementById('status-text');
@@ -180,7 +368,6 @@
         const checkoutRow = document.getElementById('checkout-row');
 
         if (!todayEntry) {
-            // No entry today
             statusText.textContent = 'No has registrado entrada hoy';
             checkInfo.style.display = 'none';
             btnCheckIn.style.display = 'block';
@@ -188,7 +375,6 @@
             holidayToggle.style.display = 'none';
             overtimeResult.style.display = 'none';
         } else if (!todayEntry.checkOut) {
-            // Checked in, not checked out
             statusText.textContent = '🟢 Trabajando...';
             checkInfo.style.display = 'block';
             document.getElementById('display-check-in').textContent = formatTime(todayEntry.checkIn);
@@ -199,7 +385,6 @@
             holidayToggle.style.display = 'block';
             overtimeResult.style.display = 'none';
         } else {
-            // Checked out
             statusText.textContent = '✅ Día completado';
             checkInfo.style.display = 'block';
             document.getElementById('display-check-in').textContent = formatTime(todayEntry.checkIn);
@@ -210,7 +395,6 @@
             btnCheckOut.style.display = 'none';
             holidayToggle.style.display = 'none';
 
-            // Show overtime result
             if (todayEntry.overtimeMinutes > 0) {
                 overtimeResult.style.display = 'block';
                 document.getElementById('result-overtime').textContent = formatHours(todayEntry.overtimeMinutes);
@@ -220,7 +404,6 @@
             }
         }
 
-        // Period Summary
         renderPeriodSummary();
     }
 
@@ -230,13 +413,12 @@
         let totalAmount = 0;
         periodEntries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
-            totalAmount += e.amount || 0;
+            totalAmount += parseFloat(e.amount) || 0;
         });
 
-        // Include today if completed
         if (state.todayEntry && state.todayEntry.checkOut && state.todayEntry.date >= state.currentPeriodStart) {
             totalMinutes += state.todayEntry.overtimeMinutes || 0;
-            totalAmount += state.todayEntry.amount || 0;
+            totalAmount += parseFloat(state.todayEntry.amount) || 0;
         }
 
         document.getElementById('period-hours').textContent = formatHours(totalMinutes);
@@ -273,17 +455,15 @@
             `).join('');
         }
 
-        // Totals
         let totalMinutes = 0;
         let totalAmount = 0;
         entries.forEach(e => {
             totalMinutes += e.overtimeMinutes || 0;
-            totalAmount += e.amount || 0;
+            totalAmount += parseFloat(e.amount) || 0;
         });
         document.getElementById('total-hours').textContent = formatHours(totalMinutes);
         document.getElementById('total-amount').textContent = formatMoney(totalAmount);
 
-        // Cuts section
         const cutsSection = document.getElementById('cuts-section');
         const cutsList = document.getElementById('cuts-list');
         if (state.cuts.length > 0) {
@@ -307,13 +487,11 @@
         document.getElementById('salary').value = state.settings.salary || '';
         document.getElementById('currency').value = state.settings.currency || '$';
 
-        // Work days checkboxes
         const dayCheckboxes = document.querySelectorAll('.days-grid input[type="checkbox"]');
         dayCheckboxes.forEach(cb => {
             cb.checked = state.settings.workDays.includes(parseInt(cb.value));
         });
 
-        // Salary info
         const salaryInfo = document.getElementById('salary-info');
         if (state.settings.salary > 0) {
             salaryInfo.style.display = 'block';
@@ -324,10 +502,30 @@
         } else {
             salaryInfo.style.display = 'none';
         }
+
+        // Update user email displays
+        if (state.user) {
+            document.getElementById('user-email').textContent = state.user.email;
+            document.getElementById('settings-email').textContent = state.user.email;
+        }
     }
 
     // ---- Event Handlers ----
     function initEventListeners() {
+        // Auth
+        document.getElementById('btn-login').addEventListener('click', handleLogin);
+        document.getElementById('btn-register').addEventListener('click', handleRegister);
+        document.getElementById('btn-logout').addEventListener('click', handleLogout);
+        document.getElementById('btn-logout-settings').addEventListener('click', handleLogout);
+
+        // Allow Enter key on auth form
+        document.getElementById('auth-password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
+        document.getElementById('auth-email').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('auth-password').focus();
+        });
+
         // Navigation
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -340,7 +538,7 @@
         });
 
         // Check In
-        document.getElementById('btn-check-in').addEventListener('click', () => {
+        document.getElementById('btn-check-in').addEventListener('click', async () => {
             const today = getToday();
             state.todayEntry = {
                 date: today,
@@ -350,13 +548,13 @@
                 overtimeMinutes: 0,
                 amount: 0
             };
-            saveState();
+            await saveEntry(state.todayEntry);
             renderHome();
             showToast('Entrada registrada: ' + formatTime(state.todayEntry.checkIn));
         });
 
         // Check Out
-        document.getElementById('btn-check-out').addEventListener('click', () => {
+        document.getElementById('btn-check-out').addEventListener('click', async () => {
             if (!state.todayEntry) return;
 
             const checkOutTime = getCurrentTime();
@@ -369,14 +567,14 @@
             state.todayEntry.overtimeMinutes = overtimeMinutes;
             state.todayEntry.amount = amount;
 
-            // Save to history if there was overtime
+            await saveEntry(state.todayEntry);
+
+            // Add to local entries list if overtime
             if (overtimeMinutes > 0) {
-                // Remove existing entry for today if any
                 state.entries = state.entries.filter(e => e.date !== state.todayEntry.date);
                 state.entries.push({ ...state.todayEntry });
             }
 
-            saveState();
             renderAll();
 
             if (overtimeMinutes > 0) {
@@ -387,7 +585,7 @@
         });
 
         // Save Settings
-        document.getElementById('btn-save-settings').addEventListener('click', () => {
+        document.getElementById('btn-save-settings').addEventListener('click', async () => {
             state.settings.workStart = document.getElementById('work-start').value;
             state.settings.workEnd = document.getElementById('work-end').value;
             state.settings.salary = parseFloat(document.getElementById('salary').value) || 0;
@@ -399,9 +597,8 @@
             });
             state.settings.workDays = workDays;
 
-            saveState();
+            await saveSettings();
             renderAll();
-            showToast('Configuración guardada');
         });
 
         // Salary live preview
@@ -420,7 +617,7 @@
         });
 
         // Make Cut
-        document.getElementById('btn-cut').addEventListener('click', () => {
+        document.getElementById('btn-cut').addEventListener('click', async () => {
             const periodEntries = state.entries.filter(e => e.date >= state.currentPeriodStart);
             
             if (periodEntries.length === 0) {
@@ -432,7 +629,7 @@
             let totalAmount = 0;
             periodEntries.forEach(e => {
                 totalMinutes += e.overtimeMinutes || 0;
-                totalAmount += e.amount || 0;
+                totalAmount += parseFloat(e.amount) || 0;
             });
 
             const cut = {
@@ -444,9 +641,9 @@
                 entriesCount: periodEntries.length
             };
 
+            await saveCut(cut);
             state.cuts.unshift(cut);
             state.currentPeriodStart = getToday();
-            saveState();
             renderAll();
             showToast(`Corte realizado: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
         });
@@ -457,66 +654,21 @@
         });
 
         // Delete entry
-        document.getElementById('history-list').addEventListener('click', (e) => {
+        document.getElementById('history-list').addEventListener('click', async (e) => {
             const btn = e.target.closest('.entry-delete');
             if (btn) {
                 const date = btn.dataset.date;
                 if (confirm('¿Eliminar este registro?')) {
+                    await deleteEntry(date);
                     state.entries = state.entries.filter(en => en.date !== date);
-                    saveState();
                     renderAll();
                     showToast('Registro eliminado');
                 }
             }
         });
-
-        // Export
-        document.getElementById('btn-export').addEventListener('click', exportData);
-
-        // Import
-        document.getElementById('btn-import').addEventListener('click', () => {
-            document.getElementById('import-file').click();
-        });
-
-        document.getElementById('import-file').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                importData(file);
-                e.target.value = '';
-            }
-        });
-
-        // Sync button (export for now)
-        document.getElementById('btn-sync').addEventListener('click', exportData);
-
-        // Clear data
-        document.getElementById('btn-clear-data').addEventListener('click', () => {
-            if (confirm('¿Estás segura de que deseas borrar TODOS los datos? Esta acción no se puede deshacer.')) {
-                if (confirm('⚠️ Última confirmación: Se borrarán todos los registros, historial y configuración.')) {
-                    localStorage.removeItem('overtime_tracker_state');
-                    state = {
-                        settings: { ...DEFAULT_SETTINGS },
-                        todayEntry: null,
-                        entries: [],
-                        cuts: [],
-                        currentPeriodStart: getToday()
-                    };
-                    renderAll();
-                    showToast('Todos los datos han sido borrados');
-                }
-            }
-        });
     }
 
-    // ---- PWA Install ----
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        // Could show install banner here
-    });
-
-    // ---- Service Worker Registration ----
+    // ---- PWA Service Worker ----
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('sw.js')
@@ -525,24 +677,36 @@
         });
     }
 
+    // ---- Auth State Listener ----
+    supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session && session.user) {
+            state.user = session.user;
+            showAppScreen();
+            await loadUserData();
+        } else {
+            state.user = null;
+            showAuthScreen();
+        }
+        showLoading(false);
+    });
+
     // ---- Initialize ----
     function init() {
-        loadState();
-
-        // Check if todayEntry is from a different day
-        if (state.todayEntry && state.todayEntry.date !== getToday()) {
-            // If it was checked in but not checked out (forgot), don't save it
-            if (state.todayEntry.checkOut && state.todayEntry.overtimeMinutes > 0) {
-                // Already saved in entries from checkout handler
-            }
-            state.todayEntry = null;
-            saveState();
-        }
-
-        renderAll();
+        showLoading(true);
         initEventListeners();
+
+        // Check existing session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session && session.user) {
+                state.user = session.user;
+                showAppScreen();
+                loadUserData();
+            } else {
+                showLoading(false);
+                showAuthScreen();
+            }
+        });
     }
 
-    // Start the app
     document.addEventListener('DOMContentLoaded', init);
 })();
