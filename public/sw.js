@@ -1,5 +1,5 @@
 // Service Worker for Overtime Tracker PWA
-const CACHE_NAME = 'overtime-tracker-v1';
+const CACHE_NAME = 'overtime-tracker-v2';
 const ASSETS = [
     '/',
     '/index.html',
@@ -32,25 +32,25 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch - serve from cache, fallback to network
+// Fetch - network first, fallback to cache (ensures latest version)
 self.addEventListener('fetch', (event) => {
     event.respondWith(
-        caches.match(event.request).then((response) => {
-            return response || fetch(event.request).then((fetchResponse) => {
-                // Cache new resources
-                if (fetchResponse.status === 200) {
-                    const responseClone = fetchResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseClone);
-                    });
-                }
-                return fetchResponse;
-            });
-        }).catch(() => {
-            // Offline fallback
-            if (event.request.mode === 'navigate') {
-                return caches.match('/index.html');
+        fetch(event.request).then((networkResponse) => {
+            // Update cache with fresh response
+            if (networkResponse.status === 200) {
+                const responseClone = networkResponse.clone();
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, responseClone);
+                });
             }
+            return networkResponse;
+        }).catch(() => {
+            // Offline: serve from cache
+            return caches.match(event.request).then((cachedResponse) => {
+                return cachedResponse || (event.request.mode === 'navigate' 
+                    ? caches.match('/index.html') 
+                    : new Response('Offline', { status: 503 }));
+            });
         })
     );
 });
