@@ -433,7 +433,9 @@
             document.getElementById('btn-reset-today').style.display = 'none';
         } else {
             // Already checked out
-            statusText.textContent = '✅ Día completado';
+            const dayTypeLabels = { 'normal': 'Día normal', 'holiday-work': '🎉 Feriado', 'off-day': '📅 Día libre' };
+            const dayLabel = dayTypeLabels[todayEntry.dayType] || 'Día normal';
+            statusText.textContent = `✅ ${dayLabel} - Completado`;
             document.getElementById('display-check-out').textContent = formatTime(todayEntry.checkOut);
             checkoutRow.style.display = 'flex';
             btnCheckOut.style.display = 'none';
