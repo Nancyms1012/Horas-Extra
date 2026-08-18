@@ -786,11 +786,24 @@
             });
         });
 
+        // Show/hide check-in field based on day type
+        document.getElementById('day-type').addEventListener('change', () => {
+            const dayType = document.getElementById('day-type').value;
+            const checkinGroup = document.getElementById('home-checkin-group');
+            if (dayType !== 'normal') {
+                checkinGroup.style.display = 'block';
+            } else {
+                checkinGroup.style.display = 'none';
+            }
+        });
+
         // Check Out (today) - uses current time
         document.getElementById('btn-check-out').addEventListener('click', async () => {
             const checkOutTime = getCurrentTime();
             const dayType = document.getElementById('day-type').value;
-            const checkIn = state.settings.workStart;
+            const checkIn = (dayType !== 'normal' && document.getElementById('home-checkin').value) 
+                ? document.getElementById('home-checkin').value 
+                : state.settings.workStart;
             const breakdown = getEntryBreakdown(dayType, checkIn, checkOutTime);
 
             const entry = {
