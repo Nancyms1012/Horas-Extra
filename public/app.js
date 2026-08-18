@@ -300,8 +300,63 @@
             state.currentPeriodStart = state.cuts[0].periodEnd || state.cuts[0].date;
         }
 
+        // Auto-close past periods
+        await autoClosePastPeriods();
+
         showLoading(false);
         renderAll();
+    }
+
+    async function autoClosePastPeriods() {
+        const today = getToday();
+        const currentPeriod = getCurrentPayPeriod();
+
+        // Get all past periods that might need closing
+        // Check the previous period(s) - go back up to 3 periods to catch any missed
+        const periodsToCheck = [];
+        let checkDate = new Date(currentPeriod.start + 'T12:00:00');
+        
+        for (let i = 0; i < 3; i++) {
+            // Go to previous period
+            checkDate.setDate(checkDate.getDate() - 1);
+            const prevPeriod = getPayPeriodForDate(formatISODate(checkDate));
+            periodsToCheck.push(prevPeriod);
+            checkDate = new Date(prevPeriod.start + 'T12:00:00');
+        }
+
+        for (const period of periodsToCheck) {
+            // Skip if already closed
+            const alreadyClosed = state.cuts.some(c => c.periodStart === period.start && c.periodEnd === period.end);
+            if (alreadyClosed) continue;
+
+            // Get entries for this period
+            const periodEntries = state.entries.filter(e => e.date >= period.start && e.date <= period.end);
+            if (periodEntries.length === 0) continue;
+
+            // Auto-close this period
+            let totalMinutes = 0, totalAmount = 0;
+            periodEntries.forEach(e => {
+                totalMinutes += e.overtimeMinutes || 0;
+                totalAmount += parseFloat(e.amount) || 0;
+            });
+
+            const cut = {
+                date: period.end,
+                periodStart: period.start,
+                periodEnd: period.end,
+                payDate: period.payDate,
+                label: period.label,
+                totalMinutes,
+                totalAmount,
+                entriesCount: periodEntries.length
+            };
+
+            await saveCut(cut);
+            state.cuts.unshift(cut);
+        }
+
+        // Sort cuts by date descending
+        state.cuts.sort((a, b) => (b.periodStart || '').localeCompare(a.periodStart || ''));
     }
 
     async function saveSettings() {
