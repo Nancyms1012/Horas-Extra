@@ -105,53 +105,71 @@
         return Math.max(0, checkOutMin - workEndMin);
     }
 
-    function calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOut) {
+    // dayType: 'normal' | 'holiday-work' | 'off-day'
+    // normal: extras after workEnd at x1.5
+    // holiday-work: normal hours at x2 + extras at x3
+    // off-day: all hours worked at x2
+    function calculateEntryAmount(dayType, checkIn, checkOut) {
         const baseRate = getHourlyRate();
-        
-        if (isHoliday) {
-            // Holiday: ALL hours worked (from entry to checkout) at simple rate
-            // + overtime hours at double rate
-            const workStartMin = timeToMinutes(state.settings.workStart);
-            const checkOutMin = timeToMinutes(checkOut || state.settings.workEnd);
-            const totalWorkedMinutes = Math.max(0, checkOutMin - workStartMin);
-            const totalWorkedHours = totalWorkedMinutes / 60;
-            
-            const normalAmount = totalWorkedHours * baseRate; // all hours at sencilla
-            const extraAmount = (overtimeMinutes / 60) * (baseRate * 2); // extras at doble
+        const checkInMin = timeToMinutes(checkIn);
+        const checkOutMin = timeToMinutes(checkOut);
+        const workEndMin = timeToMinutes(state.settings.workEnd);
+        const totalWorkedMinutes = Math.max(0, checkOutMin - checkInMin);
+        const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
+
+        if (dayType === 'off-day') {
+            // Day off: ALL hours at x2
+            return (totalWorkedMinutes / 60) * (baseRate * 2);
+        } else if (dayType === 'holiday-work') {
+            // Holiday on work day: normal hours at x2 + extras at x3
+            const normalMinutes = totalWorkedMinutes - overtimeMinutes;
+            const normalAmount = (normalMinutes / 60) * (baseRate * 2);
+            const extraAmount = (overtimeMinutes / 60) * (baseRate * 3);
             return normalAmount + extraAmount;
         } else {
-            // Normal day: overtime at the selected multiplier (1.5 or 2)
-            return (overtimeMinutes / 60) * (baseRate * otMultiplier);
+            // Normal day: only overtime at x1.5
+            return (overtimeMinutes / 60) * (baseRate * 1.5);
         }
     }
 
-    function getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier, checkOut) {
+    function getEntryBreakdown(dayType, checkIn, checkOut) {
         const baseRate = getHourlyRate();
-        
-        if (isHoliday) {
-            const workStartMin = timeToMinutes(state.settings.workStart);
-            const checkOutMin = timeToMinutes(checkOut || state.settings.workEnd);
-            const totalWorkedMinutes = Math.max(0, checkOutMin - workStartMin);
-            const totalWorkedHours = totalWorkedMinutes / 60;
-            
-            const normalAmount = totalWorkedHours * baseRate;
-            const extraAmount = (overtimeMinutes / 60) * (baseRate * 2);
+        const checkInMin = timeToMinutes(checkIn);
+        const checkOutMin = timeToMinutes(checkOut);
+        const workEndMin = timeToMinutes(state.settings.workEnd);
+        const totalWorkedMinutes = Math.max(0, checkOutMin - checkInMin);
+        const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
+
+        if (dayType === 'off-day') {
+            const amount = (totalWorkedMinutes / 60) * (baseRate * 2);
             return {
                 lines: [
-                    `${formatHours(totalWorkedMinutes)} trabajadas × ${formatMoney(baseRate)}/h (sencilla) = ${formatMoney(normalAmount)}`,
-                    overtimeMinutes > 0 ? `${formatHours(overtimeMinutes)} extra × ${formatMoney(baseRate * 2)}/h (doble) = ${formatMoney(extraAmount)}` : null
+                    `${formatHours(totalWorkedMinutes)} trabajadas × ${formatMoney(baseRate * 2)}/h (×2) = ${formatMoney(amount)}`
+                ],
+                total: amount,
+                overtimeMinutes: totalWorkedMinutes
+            };
+        } else if (dayType === 'holiday-work') {
+            const normalMinutes = totalWorkedMinutes - overtimeMinutes;
+            const normalAmount = (normalMinutes / 60) * (baseRate * 2);
+            const extraAmount = (overtimeMinutes / 60) * (baseRate * 3);
+            return {
+                lines: [
+                    `${formatHours(normalMinutes)} normales × ${formatMoney(baseRate * 2)}/h (×2) = ${formatMoney(normalAmount)}`,
+                    overtimeMinutes > 0 ? `${formatHours(overtimeMinutes)} extra × ${formatMoney(baseRate * 3)}/h (×3) = ${formatMoney(extraAmount)}` : null
                 ].filter(Boolean),
-                total: normalAmount + extraAmount
+                total: normalAmount + extraAmount,
+                overtimeMinutes: totalWorkedMinutes
             };
         } else {
-            const rate = baseRate * otMultiplier;
+            const rate = baseRate * 1.5;
             const amount = (overtimeMinutes / 60) * rate;
-            const label = otMultiplier === 2 ? 'doble' : 'tiempo y medio';
             return {
                 lines: [
-                    `${formatHours(overtimeMinutes)} × ${formatMoney(rate)}/h (${label}) = ${formatMoney(amount)}`
+                    overtimeMinutes > 0 ? `${formatHours(overtimeMinutes)} × ${formatMoney(rate)}/h (×1.5) = ${formatMoney(amount)}` : 'Sin horas extra'
                 ],
-                total: amount
+                total: amount,
+                overtimeMinutes
             };
         }
     }
@@ -251,7 +269,7 @@
             checkIn: e.check_in,
             checkOut: e.check_out,
             isHoliday: e.is_holiday,
-            otMultiplier: e.ot_multiplier || 1.5,
+            dayType: e.day_type || (e.is_holiday ? 'holiday-work' : 'normal'),
             overtimeMinutes: e.overtime_minutes,
             amount: parseFloat(e.amount)
         }));
@@ -302,7 +320,7 @@
         const { error } = await supabase.from('overtime_entries').upsert({
             user_id: state.user.id, date: entry.date,
             check_in: entry.checkIn, check_out: entry.checkOut,
-            is_holiday: entry.isHoliday, ot_multiplier: entry.otMultiplier,
+            is_holiday: entry.isHoliday, day_type: entry.dayType || 'normal',
             overtime_minutes: entry.overtimeMinutes, amount: entry.amount,
             updated_at: new Date().toISOString()
         }, { onConflict: 'user_id,date' });
@@ -346,16 +364,14 @@
         const checkoutRow = document.getElementById('checkout-row');
         const overtimeResult = document.getElementById('overtime-result');
         const btnCheckOut = document.getElementById('btn-check-out');
-        const holidayToggle = document.getElementById('holiday-toggle');
-        const otTypeSelector = document.getElementById('ot-type-selector');
+        const dayTypeSelector = document.getElementById('day-type-selector');
 
         if (!todayEntry || !todayEntry.checkOut) {
             // Not checked out yet today
             statusText.textContent = '🟢 Jornada en curso';
             checkoutRow.style.display = 'none';
             btnCheckOut.style.display = 'block';
-            holidayToggle.style.display = 'block';
-            otTypeSelector.style.display = 'block';
+            dayTypeSelector.style.display = 'block';
             overtimeResult.style.display = 'none';
             document.getElementById('btn-reset-today').style.display = 'none';
         } else {
@@ -364,15 +380,13 @@
             document.getElementById('display-check-out').textContent = formatTime(todayEntry.checkOut);
             checkoutRow.style.display = 'flex';
             btnCheckOut.style.display = 'none';
-            holidayToggle.style.display = 'none';
-            otTypeSelector.style.display = 'none';
+            dayTypeSelector.style.display = 'none';
 
             if (todayEntry.amount > 0) {
                 overtimeResult.style.display = 'block';
                 document.getElementById('result-overtime').textContent = formatHours(todayEntry.overtimeMinutes);
                 document.getElementById('result-money').textContent = formatMoney(todayEntry.amount);
-                // Breakdown
-                const breakdown = getEntryBreakdown(todayEntry.overtimeMinutes, todayEntry.isHoliday, todayEntry.otMultiplier || 1.5, todayEntry.checkOut);
+                const breakdown = getEntryBreakdown(todayEntry.dayType || 'normal', todayEntry.checkIn, todayEntry.checkOut);
                 document.getElementById('result-breakdown').innerHTML = breakdown.lines.map(l => `<p class="breakdown-line">${l}</p>`).join('');
             } else {
                 overtimeResult.style.display = 'none';
@@ -568,6 +582,7 @@
             document.getElementById('rate-simple').textContent = formatMoney(base);
             document.getElementById('rate-150').textContent = formatMoney(base * 1.5);
             document.getElementById('rate-double').textContent = formatMoney(base * 2);
+            document.getElementById('rate-triple').textContent = formatMoney(base * 3);
         } else { salaryInfo.style.display = 'none'; }
 
         if (state.user) {
@@ -587,17 +602,17 @@
             editingDate = entry.date;
             document.getElementById('modal-title').textContent = 'Editar Registro';
             document.getElementById('modal-date').value = entry.date;
+            document.getElementById('modal-checkin').value = entry.checkIn || state.settings.workStart;
             document.getElementById('modal-checkout').value = entry.checkOut || '';
-            document.getElementById('modal-holiday').value = entry.isHoliday ? 'holiday' : 'normal';
-            document.getElementById('modal-ot-type').value = String(entry.otMultiplier || 1.5);
+            document.getElementById('modal-day-type').value = entry.dayType || (entry.isHoliday ? 'holiday-work' : 'normal');
         } else {
             // Adding new
             editingDate = null;
             document.getElementById('modal-title').textContent = 'Agregar Registro';
             document.getElementById('modal-date').value = getToday();
+            document.getElementById('modal-checkin').value = state.settings.workStart;
             document.getElementById('modal-checkout').value = '';
-            document.getElementById('modal-holiday').value = 'normal';
-            document.getElementById('modal-ot-type').value = '1.5';
+            document.getElementById('modal-day-type').value = 'normal';
         }
         updateModalPreview();
     }
@@ -608,51 +623,44 @@
     }
 
     function updateModalPreview() {
+        const checkin = document.getElementById('modal-checkin').value;
         const checkout = document.getElementById('modal-checkout').value;
-        const isHoliday = document.getElementById('modal-holiday').value === 'holiday';
-        const otMultiplier = parseFloat(document.getElementById('modal-ot-type').value);
+        const dayType = document.getElementById('modal-day-type').value;
         const preview = document.getElementById('modal-preview');
-        const otTypeGroup = document.getElementById('modal-ot-type-group');
 
-        // Hide OT type selector when holiday (holidays always use double for extras)
-        otTypeGroup.style.display = isHoliday ? 'none' : 'block';
-
-        if (!checkout || state.settings.salary <= 0) {
-            preview.innerHTML = '<p class="help-text">Ingresa hora de salida para ver el cálculo</p>';
+        if (!checkin || !checkout || state.settings.salary <= 0) {
+            preview.innerHTML = '<p class="help-text">Ingresa horas de entrada y salida para ver el cálculo</p>';
             return;
         }
 
-        const overtimeMinutes = calculateOvertimeMinutes(checkout, state.settings.workEnd);
-        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkout);
-        const breakdown = getEntryBreakdown(overtimeMinutes, isHoliday, otMultiplier, checkout);
+        const breakdown = getEntryBreakdown(dayType, checkin, checkout);
 
         let html = '<div class="modal-preview-content">';
-        if (isHoliday) {
-            html += `<p><strong>Feriado:</strong> Horas trabajadas a sencilla + extras a doble</p>`;
-        }
-        if (overtimeMinutes > 0) {
-            html += `<p>Tiempo extra: <strong>${formatHours(overtimeMinutes)}</strong></p>`;
+        if (dayType === 'off-day') {
+            html += `<p><strong>Día libre:</strong> Todas las horas a doble</p>`;
+        } else if (dayType === 'holiday-work') {
+            html += `<p><strong>Feriado laboral:</strong> Horas a sencilla + extras a doble</p>`;
         }
         breakdown.lines.forEach(l => { html += `<p>${l}</p>`; });
-        html += `<p class="preview-total">Total: <strong>${formatMoney(amount)}</strong></p>`;
+        html += `<p class="preview-total">Total: <strong>${formatMoney(breakdown.total)}</strong></p>`;
         html += '</div>';
         preview.innerHTML = html;
     }
 
     async function saveModalEntry() {
         const date = document.getElementById('modal-date').value;
+        const checkIn = document.getElementById('modal-checkin').value;
         const checkOut = document.getElementById('modal-checkout').value;
-        const isHoliday = document.getElementById('modal-holiday').value === 'holiday';
-        const otMultiplier = parseFloat(document.getElementById('modal-ot-type').value);
+        const dayType = document.getElementById('modal-day-type').value;
 
-        if (!date || !checkOut) { showToast('Completa fecha y hora de salida'); return; }
+        if (!date || !checkIn || !checkOut) { showToast('Completa todos los campos'); return; }
 
-        const overtimeMinutes = calculateOvertimeMinutes(checkOut, state.settings.workEnd);
-        const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOut);
+        const breakdown = getEntryBreakdown(dayType, checkIn, checkOut);
 
         const entry = {
-            date, checkIn: state.settings.workStart, checkOut,
-            isHoliday, otMultiplier, overtimeMinutes, amount
+            date, checkIn, checkOut, dayType,
+            isHoliday: dayType !== 'normal',
+            overtimeMinutes: breakdown.overtimeMinutes, amount: breakdown.total
         };
 
         await saveEntry(entry);
@@ -662,7 +670,7 @@
             state.todayEntry = entry;
         } else {
             state.entries = state.entries.filter(e => e.date !== date);
-            if (amount > 0 || isHoliday) { state.entries.push(entry); }
+            if (breakdown.total > 0) { state.entries.push(entry); }
         }
 
         closeModal();
@@ -710,14 +718,14 @@
         // Check Out (today) - uses current time
         document.getElementById('btn-check-out').addEventListener('click', async () => {
             const checkOutTime = getCurrentTime();
-            const isHoliday = document.getElementById('is-holiday').checked;
-            const otMultiplier = parseFloat(document.getElementById('ot-type').value);
-            const overtimeMinutes = calculateOvertimeMinutes(checkOutTime, state.settings.workEnd);
-            const amount = calculateEntryAmount(overtimeMinutes, isHoliday, otMultiplier, checkOutTime);
+            const dayType = document.getElementById('day-type').value;
+            const checkIn = state.settings.workStart;
+            const breakdown = getEntryBreakdown(dayType, checkIn, checkOutTime);
 
             const entry = {
-                date: getToday(), checkIn: state.settings.workStart, checkOut: checkOutTime,
-                isHoliday, otMultiplier, overtimeMinutes, amount
+                date: getToday(), checkIn, checkOut: checkOutTime,
+                dayType, isHoliday: dayType !== 'normal',
+                overtimeMinutes: breakdown.overtimeMinutes, amount: breakdown.total
             };
 
             state.todayEntry = entry;
@@ -725,11 +733,11 @@
 
             // Also add to entries list for history
             state.entries = state.entries.filter(e => e.date !== entry.date);
-            if (amount > 0 || isHoliday) { state.entries.push(entry); }
+            if (breakdown.total > 0) { state.entries.push(entry); }
 
             renderAll();
-            if (amount > 0) {
-                showToast(`Check out! ${formatHours(overtimeMinutes)} extra = ${formatMoney(amount)}`);
+            if (breakdown.total > 0) {
+                showToast(`Check out! ${formatMoney(breakdown.total)}`);
             } else {
                 showToast('Check out registrado. No hubo horas extra.');
             }
@@ -759,6 +767,7 @@
                 document.getElementById('rate-simple').textContent = `${currency}${base.toFixed(2)}`;
                 document.getElementById('rate-150').textContent = `${currency}${(base * 1.5).toFixed(2)}`;
                 document.getElementById('rate-double').textContent = `${currency}${(base * 2).toFixed(2)}`;
+                document.getElementById('rate-triple').textContent = `${currency}${(base * 3).toFixed(2)}`;
             } else { salaryInfo.style.display = 'none'; }
         });
 
@@ -813,9 +822,9 @@
         document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
         document.getElementById('btn-modal-save').addEventListener('click', saveModalEntry);
         document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+        document.getElementById('modal-checkin').addEventListener('input', updateModalPreview);
         document.getElementById('modal-checkout').addEventListener('input', updateModalPreview);
-        document.getElementById('modal-holiday').addEventListener('change', updateModalPreview);
-        document.getElementById('modal-ot-type').addEventListener('change', updateModalPreview);
+        document.getElementById('modal-day-type').addEventListener('change', updateModalPreview);
     }
 
 

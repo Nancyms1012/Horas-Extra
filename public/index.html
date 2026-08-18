@@ -114,18 +114,13 @@
                         </div>
 
                         <div class="action-buttons">
-                            <div class="holiday-toggle" id="holiday-toggle">
-                                <label class="toggle-label">
-                                    <input type="checkbox" id="is-holiday">
-                                    <span class="toggle-text">🎉 Es día feriado</span>
-                                </label>
-                            </div>
-                            <div class="ot-type-selector" id="ot-type-selector">
+                            <div class="day-type-selector" id="day-type-selector">
                                 <label class="form-group">
-                                    <span>Tipo de hora extra:</span>
-                                    <select id="ot-type" class="select-input">
-                                        <option value="1.5">Tiempo y medio (×1.5)</option>
-                                        <option value="2">Doble (×2)</option>
+                                    <span>Tipo de día:</span>
+                                    <select id="day-type" class="select-input" style="width:100%;">
+                                        <option value="normal">Día laboral normal</option>
+                                        <option value="holiday-work">Feriado (día laboral)</option>
+                                        <option value="off-day">Día libre / no laboral</option>
                                     </select>
                                 </label>
                             </div>
@@ -259,8 +254,9 @@
                             </div>
                             <div class="salary-info" id="salary-info" style="display:none;">
                                 <p>💡 Hora sencilla (salario/240): <strong id="rate-simple">$0.00</strong></p>
-                                <p>💡 Tiempo y medio (×1.5): <strong id="rate-150">$0.00</strong></p>
-                                <p>💡 Doble (×2): <strong id="rate-double">$0.00</strong></p>
+                                <p>💡 Hora extra día normal (×1.5): <strong id="rate-150">$0.00</strong></p>
+                                <p>💡 Hora día libre/feriado (×2): <strong id="rate-double">$0.00</strong></p>
+                                <p>💡 Hora extra feriado (×3): <strong id="rate-triple">$0.00</strong></p>
                             </div>
                         </div>
 
@@ -296,22 +292,20 @@
                 <input type="date" id="modal-date" class="input">
             </div>
             <div class="form-group">
-                <label for="modal-checkout">Hora de salida:</label>
-                <input type="time" id="modal-checkout" class="input">
+                <label for="modal-day-type">Tipo de día:</label>
+                <select id="modal-day-type" class="select-input" style="width:100%;">
+                    <option value="normal">Día laboral normal</option>
+                    <option value="holiday-work">Feriado (día laboral)</option>
+                    <option value="off-day">Día libre / no laboral</option>
+                </select>
+            </div>
+            <div class="form-group" id="modal-checkin-group">
+                <label for="modal-checkin">Hora de entrada:</label>
+                <input type="time" id="modal-checkin" class="input">
             </div>
             <div class="form-group">
-                <label>Tipo de día:</label>
-                <select id="modal-holiday" class="select-input" style="width:100%;">
-                    <option value="normal">Día normal</option>
-                    <option value="holiday">Día feriado</option>
-                </select>
-            </div>
-            <div id="modal-ot-type-group" class="form-group">
-                <label>Tipo de hora extra:</label>
-                <select id="modal-ot-type" class="select-input" style="width:100%;">
-                    <option value="1.5">Tiempo y medio (×1.5)</option>
-                    <option value="2">Doble (×2)</option>
-                </select>
+                <label for="modal-checkout">Hora de salida:</label>
+                <input type="time" id="modal-checkout" class="input">
             </div>
             <div id="modal-preview" class="modal-preview"></div>
             <div class="modal-buttons">
