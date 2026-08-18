@@ -291,6 +291,7 @@
 
         state.cuts = (cuts || []).map(c => ({
             date: c.cut_date, periodStart: c.period_start, periodEnd: c.period_end,
+            payDate: c.pay_date, label: c.label,
             totalMinutes: c.total_minutes, totalAmount: parseFloat(c.total_amount),
             entriesCount: c.entries_count
         }));
@@ -339,6 +340,7 @@
         const { error } = await supabase.from('period_cuts').insert({
             user_id: state.user.id, cut_date: cut.date,
             period_start: cut.periodStart, period_end: cut.periodEnd,
+            pay_date: cut.payDate, label: cut.label,
             total_minutes: cut.totalMinutes, total_amount: cut.totalAmount,
             entries_count: cut.entriesCount
         });
@@ -552,18 +554,32 @@
         document.getElementById('total-hours').textContent = formatHours(totalMinutes);
         document.getElementById('total-amount').textContent = formatMoney(totalAmount);
 
-        const cutsSection = document.getElementById('cuts-section');
-        const cutsList = document.getElementById('cuts-list');
+        const closedSection = document.getElementById('closed-periods-section');
+        const closedList = document.getElementById('closed-periods-list');
         if (state.cuts.length > 0) {
-            cutsSection.style.display = 'block';
-            cutsList.innerHTML = state.cuts.map(cut => `
-                <div class="cut-item">
-                    <h4>Corte: ${formatDate(cut.date)}</h4>
-                    <p>Período: ${formatDate(cut.periodStart)} - ${formatDate(cut.periodEnd)}</p>
-                    <p>Total horas: <strong>${formatHours(cut.totalMinutes)}</strong> | Total: <strong>${formatMoney(cut.totalAmount)}</strong></p>
-                    <p>Registros: ${cut.entriesCount}</p>
+            closedSection.style.display = 'block';
+            closedList.innerHTML = state.cuts.map(cut => `
+                <div class="closed-period-item">
+                    <div class="closed-period-header">
+                        <h4>${cut.label || (cut.periodStart + ' - ' + cut.periodEnd)}</h4>
+                        <span class="closed-period-pay-date">Pago: ${formatDate(cut.payDate || cut.date)}</span>
+                    </div>
+                    <div class="closed-period-summary">
+                        <div class="closed-period-stat">
+                            <span class="stat-value">${formatHours(cut.totalMinutes)}</span>
+                            <span class="stat-label">Horas</span>
+                        </div>
+                        <div class="closed-period-stat">
+                            <span class="stat-value stat-money">${formatMoney(cut.totalAmount)}</span>
+                            <span class="stat-label">Total a pagar</span>
+                        </div>
+                        <div class="closed-period-stat">
+                            <span class="stat-value">${cut.entriesCount}</span>
+                            <span class="stat-label">Días</span>
+                        </div>
+                    </div>
                 </div>`).join('');
-        } else { cutsSection.style.display = 'none'; }
+        } else { closedSection.style.display = 'none'; }
     }
 
     function renderSettings() {
@@ -801,8 +817,54 @@
             }
         });
 
-        // Make Cut (auto-managed by pay periods now, but keep for manual use)
-        // document.getElementById('btn-cut') removed - periods are automatic
+        // Close biweekly period
+        document.getElementById('btn-close-period').addEventListener('click', async () => {
+            const period = getCurrentPayPeriod();
+            let allEntries = [...state.entries];
+            if (state.todayEntry && state.todayEntry.checkOut) {
+                const alreadyIncluded = allEntries.some(e => e.date === state.todayEntry.date);
+                if (!alreadyIncluded) { allEntries.push({ ...state.todayEntry }); }
+            }
+            const periodEntries = allEntries.filter(e => e.date >= period.start && e.date <= period.end);
+
+            if (periodEntries.length === 0) {
+                showToast('No hay registros en esta quincena para cerrar');
+                return;
+            }
+
+            // Check if this period is already closed
+            const alreadyClosed = state.cuts.some(c => c.periodStart === period.start && c.periodEnd === period.end);
+            if (alreadyClosed) {
+                showToast('Esta quincena ya fue cerrada');
+                return;
+            }
+
+            let totalMinutes = 0, totalAmount = 0;
+            periodEntries.forEach(e => {
+                totalMinutes += e.overtimeMinutes || 0;
+                totalAmount += parseFloat(e.amount) || 0;
+            });
+
+            if (!confirm(`¿Cerrar quincena ${period.label}?\n\nTotal horas: ${formatHours(totalMinutes)}\nTotal a pagar: ${formatMoney(totalAmount)}\nDías con extras: ${periodEntries.length}`)) {
+                return;
+            }
+
+            const cut = {
+                date: getToday(),
+                periodStart: period.start,
+                periodEnd: period.end,
+                payDate: period.payDate,
+                label: period.label,
+                totalMinutes,
+                totalAmount,
+                entriesCount: periodEntries.length
+            };
+
+            await saveCut(cut);
+            state.cuts.unshift(cut);
+            renderAll();
+            showToast(`Quincena cerrada: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
+        });
 
         // Filter
         document.getElementById('filter-period').addEventListener('change', () => { renderHistory(); });

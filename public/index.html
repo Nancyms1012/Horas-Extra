@@ -171,6 +171,7 @@
                                     <option value="all">Todos</option>
                                 </select>
                                 <button id="btn-add-entry" class="btn btn-primary btn-small">➕ Agregar</button>
+                                <button id="btn-close-period" class="btn btn-secondary btn-small">📋 Cerrar Quincena</button>
                             </div>
                         </div>
                         
@@ -192,10 +193,11 @@
                         </div>
                     </div>
 
-                    <!-- Past Cuts -->
-                    <div class="card" id="cuts-section" style="display:none;">
-                        <h3>Cortes Anteriores</h3>
-                        <div id="cuts-list"></div>
+                    <!-- Closed Periods History -->
+                    <div class="card" id="closed-periods-section" style="display:none;">
+                        <h3>📋 Quincenas Cerradas</h3>
+                        <p class="help-text">Historial de quincenas finalizadas para comparar con el pago recibido.</p>
+                        <div id="closed-periods-list"></div>
                     </div>
                 </section>
 

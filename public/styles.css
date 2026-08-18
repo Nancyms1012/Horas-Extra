@@ -1008,3 +1008,65 @@ body {
     margin-bottom: 12px;
     font-weight: 500;
 }
+
+
+/* ============ Closed Periods ============ */
+.closed-period-item {
+    padding: 16px;
+    margin-bottom: 12px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--success);
+}
+
+.closed-period-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.closed-period-header h4 {
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.closed-period-pay-date {
+    font-size: 0.75rem;
+    background: #d1fae5;
+    color: #065f46;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.closed-period-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.closed-period-stat {
+    text-align: center;
+    padding: 8px;
+    background: var(--card-bg);
+    border-radius: var(--radius-sm);
+}
+
+.stat-value {
+    display: block;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.stat-money {
+    color: var(--success);
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-light);
+    margin-top: 2px;
+}
