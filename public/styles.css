@@ -1070,14 +1070,3 @@ body {
     color: var(--text-light);
     margin-top: 2px;
 }
-
-
-/* ============ Header Actions Bar ============ */
-.header-actions {
-    display: flex;
-    justify-content: flex-end;
-    padding: 8px 16px;
-    background: var(--card-bg);
-    border-bottom: 1px solid var(--border);
-    gap: 8px;
-}
