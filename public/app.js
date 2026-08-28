@@ -26,8 +26,16 @@
         todayEntry: null,
         entries: [],
         cuts: [],
-        currentPeriodStart: new Date().toISOString().split('T')[0]
+        currentPeriodStart: getTodayLocal()
     };
+
+    function getTodayLocal() {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
 
     let editingDate = null; // track if we're editing an existing entry
 
@@ -65,7 +73,7 @@
     }
 
     function getToday() {
-        return new Date().toISOString().split('T')[0];
+        return formatISODate(new Date());
     }
 
     function timeToMinutes(timeStr) {
@@ -519,7 +527,11 @@
     }
 
     function formatISODate(date) {
-        return date.toISOString().split('T')[0];
+        // Use LOCAL date components (not UTC) to avoid timezone off-by-one issues
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     function getMonthName(monthIndex) {
