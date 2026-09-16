@@ -83,3 +83,10 @@ CREATE POLICY "Users can insert own cuts" ON period_cuts
 
 CREATE POLICY "Users can delete own cuts" ON period_cuts
     FOR DELETE USING (auth.uid() = user_id);
+
+
+-- Columnas para separar horas extra normales vs feriado/día libre en cortes
+ALTER TABLE period_cuts ADD COLUMN IF NOT EXISTS normal_minutes INTEGER DEFAULT 0;
+ALTER TABLE period_cuts ADD COLUMN IF NOT EXISTS normal_amount DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE period_cuts ADD COLUMN IF NOT EXISTS holiday_minutes INTEGER DEFAULT 0;
+ALTER TABLE period_cuts ADD COLUMN IF NOT EXISTS holiday_amount DECIMAL(12,2) DEFAULT 0;

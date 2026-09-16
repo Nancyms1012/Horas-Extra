@@ -301,6 +301,8 @@
             date: c.cut_date, periodStart: c.period_start, periodEnd: c.period_end,
             payDate: c.pay_date, label: c.label,
             totalMinutes: c.total_minutes, totalAmount: parseFloat(c.total_amount),
+            normalMinutes: c.normal_minutes || 0, normalAmount: parseFloat(c.normal_amount) || 0,
+            holidayMinutes: c.holiday_minutes || 0, holidayAmount: parseFloat(c.holiday_amount) || 0,
             entriesCount: c.entries_count
         }));
 
@@ -342,11 +344,7 @@
             if (periodEntries.length === 0) continue;
 
             // Auto-close this period
-            let totalMinutes = 0, totalAmount = 0;
-            periodEntries.forEach(e => {
-                totalMinutes += e.overtimeMinutes || 0;
-                totalAmount += parseFloat(e.amount) || 0;
-            });
+            const t = sumEntriesByType(periodEntries);
 
             const cut = {
                 date: period.end,
@@ -354,8 +352,12 @@
                 periodEnd: period.end,
                 payDate: period.payDate,
                 label: period.label,
-                totalMinutes,
-                totalAmount,
+                totalMinutes: t.totalMinutes,
+                totalAmount: t.totalAmount,
+                normalMinutes: t.normalMinutes,
+                normalAmount: t.normalAmount,
+                holidayMinutes: t.holidayMinutes,
+                holidayAmount: t.holidayAmount,
                 entriesCount: periodEntries.length
             };
 
@@ -431,6 +433,8 @@
             period_start: cut.periodStart, period_end: cut.periodEnd,
             pay_date: cut.payDate, label: cut.label,
             total_minutes: cut.totalMinutes, total_amount: cut.totalAmount,
+            normal_minutes: cut.normalMinutes, normal_amount: cut.normalAmount,
+            holiday_minutes: cut.holidayMinutes, holiday_amount: cut.holidayAmount,
             entries_count: cut.entriesCount
         });
         if (error) { console.error('Error saving cut:', error); showToast('Error al guardar corte'); }
@@ -573,15 +577,36 @@
             if (!alreadyIncluded) { allEntries.push({ ...state.todayEntry }); }
         }
         const periodEntries = allEntries.filter(e => e.date >= period.start && e.date <= period.end);
-        let totalMinutes = 0, totalAmount = 0;
-        periodEntries.forEach(e => {
-            totalMinutes += e.overtimeMinutes || 0;
-            totalAmount += parseFloat(e.amount) || 0;
-        });
-        document.getElementById('period-hours').textContent = formatHours(totalMinutes);
-        document.getElementById('period-amount').textContent = formatMoney(totalAmount);
+        const t = sumEntriesByType(periodEntries);
+        document.getElementById('period-hours').textContent = formatHours(t.totalMinutes);
+        document.getElementById('period-amount').textContent = formatMoney(t.totalAmount);
+        document.getElementById('period-normal-hours').textContent = formatHours(t.normalMinutes);
+        document.getElementById('period-normal-amount').textContent = formatMoney(t.normalAmount);
+        document.getElementById('period-holiday-hours').textContent = formatHours(t.holidayMinutes);
+        document.getElementById('period-holiday-amount').textContent = formatMoney(t.holidayAmount);
         document.getElementById('period-label').textContent = `Quincena actual: ${period.label}`;
         document.getElementById('period-pay-date').textContent = `Se paga: ${formatDate(period.payDate)}`;
+    }
+
+    // Suma registros separando horas extra de día normal vs feriado/día libre
+    function sumEntriesByType(entries) {
+        let totalMinutes = 0, totalAmount = 0;
+        let normalMinutes = 0, normalAmount = 0;
+        let holidayMinutes = 0, holidayAmount = 0;
+        entries.forEach(e => {
+            const min = e.overtimeMinutes || 0;
+            const amt = parseFloat(e.amount) || 0;
+            totalMinutes += min;
+            totalAmount += amt;
+            if ((e.dayType || 'normal') === 'normal') {
+                normalMinutes += min;
+                normalAmount += amt;
+            } else {
+                holidayMinutes += min;
+                holidayAmount += amt;
+            }
+        });
+        return { totalMinutes, totalAmount, normalMinutes, normalAmount, holidayMinutes, holidayAmount };
     }
 
 
@@ -662,7 +687,7 @@
                     <div class="closed-period-summary">
                         <div class="closed-period-stat">
                             <span class="stat-value">${formatHours(cut.totalMinutes)}</span>
-                            <span class="stat-label">Horas</span>
+                            <span class="stat-label">Horas totales</span>
                         </div>
                         <div class="closed-period-stat">
                             <span class="stat-value stat-money">${formatMoney(cut.totalAmount)}</span>
@@ -671,6 +696,16 @@
                         <div class="closed-period-stat">
                             <span class="stat-value">${cut.entriesCount}</span>
                             <span class="stat-label">Días</span>
+                        </div>
+                    </div>
+                    <div class="closed-period-breakdown">
+                        <div class="breakdown-row">
+                            <span class="breakdown-name">Extra día normal (×1.5)</span>
+                            <span class="breakdown-detail"><strong>${formatHours(cut.normalMinutes || 0)}</strong> · ${formatMoney(cut.normalAmount || 0)}</span>
+                        </div>
+                        <div class="breakdown-row">
+                            <span class="breakdown-name">Feriado / día libre (×2, ×3)</span>
+                            <span class="breakdown-detail"><strong>${formatHours(cut.holidayMinutes || 0)}</strong> · ${formatMoney(cut.holidayAmount || 0)}</span>
                         </div>
                     </div>
                 </div>`).join('');
@@ -947,13 +982,9 @@
                 return;
             }
 
-            let totalMinutes = 0, totalAmount = 0;
-            periodEntries.forEach(e => {
-                totalMinutes += e.overtimeMinutes || 0;
-                totalAmount += parseFloat(e.amount) || 0;
-            });
+            const t = sumEntriesByType(periodEntries);
 
-            if (!confirm(`¿Cerrar quincena ${period.label}?\n\nTotal horas: ${formatHours(totalMinutes)}\nTotal a pagar: ${formatMoney(totalAmount)}\nDías con extras: ${periodEntries.length}`)) {
+            if (!confirm(`¿Cerrar quincena ${period.label}?\n\nExtra día normal: ${formatHours(t.normalMinutes)} = ${formatMoney(t.normalAmount)}\nFeriado/día libre: ${formatHours(t.holidayMinutes)} = ${formatMoney(t.holidayAmount)}\n\nTotal: ${formatHours(t.totalMinutes)} = ${formatMoney(t.totalAmount)}\nDías con extras: ${periodEntries.length}`)) {
                 return;
             }
 
@@ -963,15 +994,19 @@
                 periodEnd: period.end,
                 payDate: period.payDate,
                 label: period.label,
-                totalMinutes,
-                totalAmount,
+                totalMinutes: t.totalMinutes,
+                totalAmount: t.totalAmount,
+                normalMinutes: t.normalMinutes,
+                normalAmount: t.normalAmount,
+                holidayMinutes: t.holidayMinutes,
+                holidayAmount: t.holidayAmount,
                 entriesCount: periodEntries.length
             };
 
             await saveCut(cut);
             state.cuts.unshift(cut);
             renderAll();
-            showToast(`Quincena cerrada: ${formatHours(totalMinutes)} = ${formatMoney(totalAmount)}`);
+            showToast(`Quincena cerrada: ${formatMoney(t.totalAmount)}`);
         });
 
         // Filter

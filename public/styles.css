@@ -1070,3 +1070,34 @@ body {
     color: var(--text-light);
     margin-top: 2px;
 }
+
+
+/* ============ Summary / Closed Period Breakdown ============ */
+.summary-breakdown,
+.closed-period-breakdown {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.8rem;
+}
+
+.breakdown-name {
+    color: var(--text-light);
+}
+
+.breakdown-detail {
+    color: var(--text);
+}
+
+.breakdown-detail strong {
+    color: var(--primary);
+}
