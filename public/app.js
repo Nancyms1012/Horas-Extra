@@ -298,6 +298,7 @@
             .order('cut_date', { ascending: false });
 
         state.cuts = (cuts || []).map(c => ({
+            id: c.id,
             date: c.cut_date, periodStart: c.period_start, periodEnd: c.period_end,
             payDate: c.pay_date, label: c.label,
             totalMinutes: c.total_minutes, totalAmount: parseFloat(c.total_amount),
@@ -312,6 +313,10 @@
 
         // Auto-close past periods
         await autoClosePastPeriods();
+
+        // Recalculate closed periods from original entries (fills the split totals
+        // on periods that were closed before the breakdown feature existed)
+        await recalcClosedPeriods();
 
         showLoading(false);
         renderAll();
@@ -424,6 +429,50 @@
         const { error } = await supabase.from('overtime_entries').delete()
             .eq('user_id', state.user.id).eq('date', date);
         if (error) { console.error('Error deleting:', error); showToast('Error al eliminar'); }
+    }
+
+    async function updateCut(cut) {
+        if (!state.user || !cut.id) return;
+        const { error } = await supabase.from('period_cuts').update({
+            total_minutes: cut.totalMinutes, total_amount: cut.totalAmount,
+            normal_minutes: cut.normalMinutes, normal_amount: cut.normalAmount,
+            holiday_minutes: cut.holidayMinutes, holiday_amount: cut.holidayAmount,
+            entries_count: cut.entriesCount
+        }).eq('id', cut.id).eq('user_id', state.user.id);
+        if (error) { console.error('Error updating cut:', error); }
+    }
+
+    // Recalcula todas las quincenas cerradas a partir de los registros originales,
+    // que siguen guardados en overtime_entries. Actualiza en la BD las que cambien.
+    async function recalcClosedPeriods() {
+        if (!state.cuts.length) return;
+        for (const cut of state.cuts) {
+            const periodEntries = state.entries.filter(
+                e => e.date >= cut.periodStart && e.date <= cut.periodEnd
+            );
+            const t = sumEntriesByType(periodEntries);
+
+            // ¿Cambió algo respecto a lo guardado?
+            const changed =
+                Math.abs((cut.totalAmount || 0) - t.totalAmount) > 0.001 ||
+                Math.abs((cut.normalAmount || 0) - t.normalAmount) > 0.001 ||
+                Math.abs((cut.holidayAmount || 0) - t.holidayAmount) > 0.001 ||
+                (cut.totalMinutes || 0) !== t.totalMinutes ||
+                (cut.normalMinutes || 0) !== t.normalMinutes ||
+                (cut.holidayMinutes || 0) !== t.holidayMinutes ||
+                (cut.entriesCount || 0) !== periodEntries.length;
+
+            if (changed) {
+                cut.totalMinutes = t.totalMinutes;
+                cut.totalAmount = t.totalAmount;
+                cut.normalMinutes = t.normalMinutes;
+                cut.normalAmount = t.normalAmount;
+                cut.holidayMinutes = t.holidayMinutes;
+                cut.holidayAmount = t.holidayAmount;
+                cut.entriesCount = periodEntries.length;
+                await updateCut(cut);
+            }
+        }
     }
 
     async function saveCut(cut) {
