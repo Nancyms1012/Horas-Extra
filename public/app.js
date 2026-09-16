@@ -277,7 +277,7 @@
             checkIn: e.check_in,
             checkOut: e.check_out,
             isHoliday: e.is_holiday,
-            dayType: e.day_type || (e.is_holiday ? 'holiday-work' : 'normal'),
+            dayType: inferDayType(e),
             overtimeMinutes: e.overtime_minutes,
             amount: parseFloat(e.amount)
         }));
@@ -377,6 +377,32 @@
         }, { onConflict: 'user_id' });
         if (error) { console.error('Error saving settings:', error); showToast('Error al guardar'); }
         else { showToast('Configuración guardada ☁️'); }
+    }
+
+    // Recupera el tipo de día. Si day_type existe en la BD, se usa directamente.
+    // Si falta (registros antiguos), se infiere comparando el monto guardado con las
+    // fórmulas de cada tipo, para no confundir "día libre" con "feriado".
+    function inferDayType(e) {
+        if (e.day_type) return e.day_type; // valor confiable de la BD
+        if (!e.is_holiday) return 'normal';
+
+        // day_type vacío pero is_holiday=true: puede ser 'off-day' o 'holiday-work'.
+        // Reproducimos ambos cálculos con los datos guardados y comparamos con el monto.
+        const baseRate = getHourlyRate();
+        const checkInMin = timeToMinutes(e.check_in || state.settings.workStart);
+        const checkOutMin = timeToMinutes(e.check_out || state.settings.workEnd);
+        const workEndMin = timeToMinutes(state.settings.workEnd);
+        const totalWorkedMinutes = Math.max(0, checkOutMin - checkInMin);
+        const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
+
+        const offDayAmount = (totalWorkedMinutes / 60) * (baseRate * 2);
+        const normalMin = totalWorkedMinutes - overtimeMinutes;
+        const holidayAmount = (normalMin / 60) * (baseRate * 2) + (overtimeMinutes / 60) * (baseRate * 3);
+
+        const saved = parseFloat(e.amount) || 0;
+        // Elegimos el tipo cuyo monto se acerca más al guardado.
+        return Math.abs(saved - offDayAmount) <= Math.abs(saved - holidayAmount)
+            ? 'off-day' : 'holiday-work';
     }
 
     async function saveEntry(entry) {
