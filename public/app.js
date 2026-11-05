@@ -116,7 +116,7 @@
     // dayType: 'normal' | 'holiday-work' | 'off-day'
     // normal: extras after workEnd at x1.5
     // holiday-work: normal hours at x2 + extras at x3
-    // off-day: all hours worked at x2
+    // off-day: all hours worked at x1.5
     function calculateEntryAmount(dayType, checkIn, checkOut) {
         const baseRate = getHourlyRate();
         const checkInMin = timeToMinutes(checkIn);
@@ -126,8 +126,8 @@
         const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
 
         if (dayType === 'off-day') {
-            // Day off: ALL hours at x2
-            return (totalWorkedMinutes / 60) * (baseRate * 2);
+            // Day off: ALL hours at x1.5
+            return (totalWorkedMinutes / 60) * (baseRate * 1.5);
         } else if (dayType === 'holiday-work') {
             // Holiday on work day: normal hours at x2 + extras at x3
             const normalMinutes = totalWorkedMinutes - overtimeMinutes;
@@ -149,10 +149,10 @@
         const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
 
         if (dayType === 'off-day') {
-            const amount = (totalWorkedMinutes / 60) * (baseRate * 2);
+            const amount = (totalWorkedMinutes / 60) * (baseRate * 1.5);
             return {
                 lines: [
-                    `${formatHours(totalWorkedMinutes)} trabajadas × ${formatMoney(baseRate * 2)}/h (×2) = ${formatMoney(amount)}`
+                    `${formatHours(totalWorkedMinutes)} trabajadas × ${formatMoney(baseRate * 1.5)}/h (×1.5) = ${formatMoney(amount)}`
                 ],
                 total: amount,
                 overtimeMinutes: totalWorkedMinutes
@@ -282,6 +282,10 @@
             amount: parseFloat(e.amount)
         }));
 
+        // Recalculate each entry's amount with the current formulas and persist
+        // any that changed (e.g. day-off entries saved under the old x2 rate)
+        await recalcEntries();
+
         // Check today's entry
         const today = getToday();
         const todayEntry = state.entries.find(e => e.date === today);
@@ -402,7 +406,7 @@
         const totalWorkedMinutes = Math.max(0, checkOutMin - checkInMin);
         const overtimeMinutes = Math.max(0, checkOutMin - workEndMin);
 
-        const offDayAmount = (totalWorkedMinutes / 60) * (baseRate * 2);
+        const offDayAmount = (totalWorkedMinutes / 60) * (baseRate * 1.5);
         const normalMin = totalWorkedMinutes - overtimeMinutes;
         const holidayAmount = (normalMin / 60) * (baseRate * 2) + (overtimeMinutes / 60) * (baseRate * 3);
 
@@ -440,6 +444,26 @@
             entries_count: cut.entriesCount
         }).eq('id', cut.id).eq('user_id', state.user.id);
         if (error) { console.error('Error updating cut:', error); }
+    }
+
+    // Recalcula el monto de cada registro con las fórmulas vigentes y actualiza en la
+    // BD los que cambiaron (p. ej. días libres guardados con la tarifa antigua ×2).
+    async function recalcEntries() {
+        for (const e of state.entries) {
+            const breakdown = getEntryBreakdown(e.dayType || 'normal', e.checkIn || state.settings.workStart, e.checkOut);
+            const newAmount = breakdown.total;
+            const newMinutes = breakdown.overtimeMinutes;
+            if (Math.abs((e.amount || 0) - newAmount) > 0.001 || (e.overtimeMinutes || 0) !== newMinutes) {
+                e.amount = newAmount;
+                e.overtimeMinutes = newMinutes;
+                await saveEntry({
+                    date: e.date, checkIn: e.checkIn, checkOut: e.checkOut,
+                    isHoliday: (e.dayType || 'normal') !== 'normal',
+                    dayType: e.dayType || 'normal',
+                    overtimeMinutes: newMinutes, amount: newAmount
+                });
+            }
+        }
     }
 
     // Recalcula todas las quincenas cerradas a partir de los registros originales,
@@ -832,9 +856,9 @@
 
         let html = '<div class="modal-preview-content">';
         if (dayType === 'off-day') {
-            html += `<p><strong>Día libre:</strong> Todas las horas a doble</p>`;
+            html += `<p><strong>Día libre:</strong> Todas las horas a ×1.5</p>`;
         } else if (dayType === 'holiday-work') {
-            html += `<p><strong>Feriado laboral:</strong> Horas a sencilla + extras a doble</p>`;
+            html += `<p><strong>Feriado laboral:</strong> Horas normales a ×2 + extras a ×3</p>`;
         }
         breakdown.lines.forEach(l => { html += `<p>${l}</p>`; });
         html += `<p class="preview-total">Total: <strong>${formatMoney(breakdown.total)}</strong></p>`;
