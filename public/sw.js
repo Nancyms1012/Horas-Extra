@@ -1,5 +1,5 @@
 // Service Worker for Overtime Tracker PWA
-const CACHE_NAME = 'overtime-tracker-v7';
+const CACHE_NAME = 'overtime-tracker-v8';
 const ASSETS = [
     '/',
     '/index.html',

@@ -1101,3 +1101,10 @@ body {
 .breakdown-detail strong {
     color: var(--primary);
 }
+
+/* ============ Day type hint ============ */
+.day-type-hint {
+    font-size: 0.78rem;
+    color: var(--text-light);
+    margin-top: 6px;
+}

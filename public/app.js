@@ -37,6 +37,76 @@
         return `${year}-${month}-${day}`;
     }
 
+    // ---- Feriados de Costa Rica ----
+    // 2026: lista oficial (MTSS), cada feriado en su fecha natural (sin traslado a lunes).
+    // 2027: fechas naturales; CONFIRMAR cuando se publique el calendario oficial por si
+    //       se aprueba algún traslado. Para agregar/quitar un feriado, editar esta lista.
+    const CR_HOLIDAYS = {
+        '2026-01-01': 'Año Nuevo',
+        '2026-04-02': 'Jueves Santo',
+        '2026-04-03': 'Viernes Santo',
+        '2026-04-11': 'Día de Juan Santamaría',
+        '2026-05-01': 'Día Internacional del Trabajo',
+        '2026-07-25': 'Anexión del Partido de Nicoya',
+        '2026-08-02': 'Día de la Virgen de los Ángeles',
+        '2026-08-15': 'Día de la Madre',
+        '2026-08-31': 'Día de la Persona Negra y la Cultura Afrocostarricense',
+        '2026-09-15': 'Día de la Independencia',
+        '2026-12-01': 'Día de la Abolición del Ejército',
+        '2026-12-25': 'Navidad',
+        '2027-01-01': 'Año Nuevo',
+        '2027-03-25': 'Jueves Santo',
+        '2027-03-26': 'Viernes Santo',
+        '2027-04-11': 'Día de Juan Santamaría',
+        '2027-05-01': 'Día Internacional del Trabajo',
+        '2027-07-25': 'Anexión del Partido de Nicoya',
+        '2027-08-02': 'Día de la Virgen de los Ángeles',
+        '2027-08-15': 'Día de la Madre',
+        '2027-08-31': 'Día de la Persona Negra y la Cultura Afrocostarricense',
+        '2027-09-15': 'Día de la Independencia',
+        '2027-12-01': 'Día de la Abolición del Ejército',
+        '2027-12-25': 'Navidad'
+    };
+
+    // Tipo de día según la fecha, el horario configurado y los feriados de CR:
+    //  - Feriado de CR (cualquier día de la semana)  -> 'holiday-work'
+    //  - Día que no está en los días laborales        -> 'off-day' (día libre)
+    //  - Cualquier otro                              -> 'normal'
+    function getAutoDayType(dateStr) {
+        if (CR_HOLIDAYS[dateStr]) return 'holiday-work';
+        const weekday = new Date(dateStr + 'T12:00:00').getDay(); // 0=Dom ... 6=Sáb
+        const workDays = state.settings.workDays || [1, 2, 3, 4, 5];
+        return workDays.includes(weekday) ? 'normal' : 'off-day';
+    }
+
+    // Inicio: sugerir automáticamente el tipo de día de hoy (a menos que ella lo cambie a mano)
+    let homeDayTypeManual = false;
+
+    function updateHomeCheckinVisibility() {
+        const dayType = document.getElementById('day-type').value;
+        document.getElementById('home-checkin-group').style.display = dayType !== 'normal' ? 'block' : 'none';
+    }
+
+    function applyHomeAutoDayType() {
+        const today = getToday();
+        if (!homeDayTypeManual) {
+            document.getElementById('day-type').value = getAutoDayType(today);
+        }
+        document.getElementById('home-day-hint').textContent = describeAutoDayType(today);
+        updateHomeCheckinVisibility();
+    }
+
+    // Texto explicativo de por qué se sugiere ese tipo de día
+    function describeAutoDayType(dateStr) {
+        const holiday = CR_HOLIDAYS[dateStr];
+        if (holiday) return `Feriado: ${holiday}`;
+        const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+        const weekday = new Date(dateStr + 'T12:00:00').getDay();
+        return getAutoDayType(dateStr) === 'off-day'
+            ? `Día libre según tu horario (el ${dayNames[weekday]} no es día laboral)`
+            : 'Día laboral normal según tu horario';
+    }
+
     let editingDate = null; // track if we're editing an existing entry
 
 
@@ -540,6 +610,7 @@
             checkoutRow.style.display = 'none';
             btnCheckOut.style.display = 'block';
             dayTypeSelector.style.display = 'block';
+            applyHomeAutoDayType();
             overtimeResult.style.display = 'none';
             document.getElementById('btn-reset-today').style.display = 'none';
         } else {
@@ -831,8 +902,23 @@
             document.getElementById('modal-date').value = getToday();
             document.getElementById('modal-checkin').value = state.settings.workStart;
             document.getElementById('modal-checkout').value = '';
-            document.getElementById('modal-day-type').value = 'normal';
+            document.getElementById('modal-day-type').value = getAutoDayType(getToday());
         }
+        updateModalDayHint();
+        updateModalPreview();
+    }
+
+    // Muestra por qué se sugiere ese tipo de día para la fecha elegida en el modal
+    function updateModalDayHint() {
+        const date = document.getElementById('modal-date').value;
+        document.getElementById('modal-day-hint').textContent = date ? describeAutoDayType(date) : '';
+    }
+
+    // Al cambiar la fecha en el modal, se vuelve a sugerir el tipo de día según horario y feriados
+    function onModalDateChange() {
+        const date = document.getElementById('modal-date').value;
+        if (date) document.getElementById('modal-day-type').value = getAutoDayType(date);
+        updateModalDayHint();
         updateModalPreview();
     }
 
@@ -858,7 +944,7 @@
         if (dayType === 'off-day') {
             html += `<p><strong>Día libre:</strong> Todas las horas a ×1.5</p>`;
         } else if (dayType === 'holiday-work') {
-            html += `<p><strong>Feriado laboral:</strong> Horas normales a ×2 + extras a ×3</p>`;
+            html += `<p><strong>Feriado:</strong> Horas normales a ×2 + extras a ×3</p>`;
         }
         breakdown.lines.forEach(l => { html += `<p>${l}</p>`; });
         html += `<p class="preview-total">Total: <strong>${formatMoney(breakdown.total)}</strong></p>`;
@@ -936,13 +1022,8 @@
 
         // Show/hide check-in field based on day type
         document.getElementById('day-type').addEventListener('change', () => {
-            const dayType = document.getElementById('day-type').value;
-            const checkinGroup = document.getElementById('home-checkin-group');
-            if (dayType !== 'normal') {
-                checkinGroup.style.display = 'block';
-            } else {
-                checkinGroup.style.display = 'none';
-            }
+            homeDayTypeManual = true; // ella lo cambió a mano: no volver a pisarlo
+            updateHomeCheckinVisibility();
         });
 
         // Check Out (today) - uses current time
@@ -1100,6 +1181,7 @@
         document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
         document.getElementById('btn-modal-save').addEventListener('click', saveModalEntry);
         document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+        document.getElementById('modal-date').addEventListener('change', onModalDateChange);
         document.getElementById('modal-checkin').addEventListener('input', updateModalPreview);
         document.getElementById('modal-checkout').addEventListener('input', updateModalPreview);
         document.getElementById('modal-day-type').addEventListener('change', updateModalPreview);

@@ -119,10 +119,11 @@
                                     <span>Tipo de día:</span>
                                     <select id="day-type" class="select-input" style="width:100%;">
                                         <option value="normal">Día laboral normal</option>
-                                        <option value="holiday-work">Feriado (día laboral)</option>
-                                        <option value="off-day">Día libre / no laboral</option>
+                                        <option value="holiday-work">Feriado</option>
+                                        <option value="off-day">Día libre (no laboral)</option>
                                     </select>
                                 </label>
+                                <p class="day-type-hint" id="home-day-hint"></p>
                             </div>
                             <div class="form-group" id="home-checkin-group" style="display:none;">
                                 <label for="home-checkin">Hora de entrada:</label>
@@ -311,9 +312,10 @@
                 <label for="modal-day-type">Tipo de día:</label>
                 <select id="modal-day-type" class="select-input" style="width:100%;">
                     <option value="normal">Día laboral normal</option>
-                    <option value="holiday-work">Feriado (día laboral)</option>
-                    <option value="off-day">Día libre / no laboral</option>
+                    <option value="holiday-work">Feriado</option>
+                    <option value="off-day">Día libre (no laboral)</option>
                 </select>
+                <p class="day-type-hint" id="modal-day-hint"></p>
             </div>
             <div class="form-group" id="modal-checkin-group">
                 <label for="modal-checkin">Hora de entrada:</label>
